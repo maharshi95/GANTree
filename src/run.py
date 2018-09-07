@@ -11,16 +11,18 @@ from tensorflow.contrib import layers
 from data import create_data
 from autoencoder import * 
 
-
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 train, test = create_data(1)
 epochs = 20000
 display = 1000
 
 del_logs = True
 
-init = tf.global_variables_initializer()
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
 
-sess = tf.Session()
+sess = tf.InteractiveSession(config=config)
+init = tf.global_variables_initializer()
 
 if del_logs:
     os.system('rm -r logs/*')
@@ -41,9 +43,10 @@ for i in range(1, epochs+1):
     z_test = np.random.uniform(-1, 1, [test.shape[0], 1])
     
     sess.run(encoder_train_op, feed_dict={X: train, Z: z_train})
+
     
-    if (i % 5) == 0:
-        
+    if (i % 4) == 0:
+        sess.run(decoder_train_op, feed_dict={X: train, Z: z_train})
         sess.run(gen_train_op, feed_dict={X: train, Z: z_train})
     else:
         sess.run(disc_train_op, feed_dict={X: train, Z: z_train})
@@ -84,4 +87,22 @@ for i in range(1, epochs+1):
         print('Step %i: Gen  Acc: %f' % (i, g_acc))
         print('Step %i: Disc Loss: %f' % (i, di_loss))
         print('Step %i: Gen  Loss: %f' % (i, g_loss))
+        print('Step %i: Dec  Loss: %f' % (i, de_loss))
         print
+
+fig = plt.figure(figsize=(15, 5))
+a1 = fig.add_subplot(231)
+a2 = fig.add_subplot(232)
+a3 = fig.add_subplot(233)
+a4= fig.add_subplot(234)
+a5 = fig.add_subplot(235)
+a1.plot(en_loss_history)
+a2.plot(g_acc_history)
+a3.plot(d_acc_history)
+a4.plot(di_loss_history)
+a5.plot(gen_loss_history)
+
+plt.show(block = True)
+
+fig.savefig('my_figure.png')
+Image('my_figure.png')

@@ -22,27 +22,27 @@ with tf.variable_scope('gan', reuse=tf.AUTO_REUSE):
 
     def encoder(x):
         with tf.variable_scope('encoder', reuse=tf.AUTO_REUSE):
-            l1 = layers.fully_connected(X, 128, scope='l1', reuse=tf.AUTO_REUSE)
+            l1 = layers.fully_connected(x, 128, scope='l1', reuse=tf.AUTO_REUSE)
             l2 = layers.fully_connected(l1, 64, scope='l2', reuse=tf.AUTO_REUSE)
-            l4 = layers.fully_connected(l2, 1, activation_fn=None, scope='l4', reuse=tf.AUTO_REUSE)
+            l4 = layers.fully_connected(l2, 1, activation_fn=tf.nn.leaky_relu, scope='l4', reuse=tf.AUTO_REUSE)
             return l4
 
 
     def decoder(x):
         with tf.variable_scope('decoder', reuse=tf.AUTO_REUSE):
-            l1 = layers.fully_connected(X, 64, scope='l1', reuse=tf.AUTO_REUSE)
+            l1 = layers.fully_connected(x, 64, scope='l1', reuse=tf.AUTO_REUSE)
             l2 = layers.fully_connected(l1, 128, scope='l2', reuse=tf.AUTO_REUSE)
-            l3 = layers.fully_connected(l2, 2, activation_fn=tf.tanh, scope='l3', reuse=tf.AUTO_REUSE)
+            l3 = layers.fully_connected(l2, 2, activation_fn=tf.nn.leaky_relu, scope='l3', reuse=tf.AUTO_REUSE)
             return l3
 
 
     def disc(x):
         with tf.variable_scope('disc', reuse=tf.AUTO_REUSE):
-            l1 = layers.fully_connected(X, 128, scope='l1', reuse=tf.AUTO_REUSE)
+            l1 = layers.fully_connected(x, 128, scope='l1', reuse=tf.AUTO_REUSE)
             l2 = layers.fully_connected(l1, 128, scope='l2', reuse=tf.AUTO_REUSE)
             l3 = layers.fully_connected(l2, 128, scope='l3', reuse=tf.AUTO_REUSE)
             l5 = layers.fully_connected(l3, 128, scope='l5', reuse=tf.AUTO_REUSE)
-            logits = layers.fully_connected(l5, 2, activation_fn=None, scope='logits', reuse=tf.AUTO_REUSE)
+            logits = layers.fully_connected(l5, 2, activation_fn=tf.nn.leaky_relu, scope='logits', reuse=tf.AUTO_REUSE)
 
             real_labels = tf.concat([tf.ones([batch_size, 1]), tf.zeros([batch_size, 1])], axis=1)
             fake_labels = tf.concat([tf.zeros([batch_size, 1]), tf.ones([batch_size, 1])], axis=1)
@@ -87,11 +87,12 @@ disc_acc = 0.5 * (disc_real_acc + disc_fake_acc)
 gen_acc = 100 * (disc_fake['real_acc'])
 
 encoder_loss = x_recon_loss + z_recon_loss
-decoder_loss = encoder_loss + 0 * gen_loss
+decoder_loss = encoder_loss + gen_loss
 
 encoder_train_op = tf.train.RMSPropOptimizer(learning_rate).minimize(encoder_loss)
 gen_train_op = tf.train.RMSPropOptimizer(learning_rate).minimize(gen_loss)
 disc_train_op = tf.train.RMSPropOptimizer(learning_rate).minimize(disc_loss)
+decoder_train_op = tf.train.RMSPropOptimizer(learning_rate).minimize(decoder_loss)
 
 summaries_list = [
     tf.summary.scalar('x_recon_loss', x_recon_loss),
