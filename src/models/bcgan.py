@@ -44,10 +44,7 @@ class Model(BaseModel):
     def __init__(self, model_name):
         BaseModel.__init__(self, model_name)
         self.model_scope = 'growing_gans'
-
-    def initiate_service(self):
-        BaseModel.initiate_service(self)
-
+        self.__is_model_build = False
 
     def build(self):
         self._define_placeholders()
@@ -61,8 +58,20 @@ class Model(BaseModel):
 
         logger.info('Model Definition complete')
         logger.info('Model Params:')
-        for param in self.param_groups['all']:
-            logger.info(param.name)
+        for param in tf.trainable_variables(self.model_scope):
+            logger.info(param)
+
+        self.__is_model_build = True
+
+    def initiate_service(self):
+        if not self.__is_model_build:
+            logger.error('Model Service Initiation Error: Trying to initiate service before building the model.')
+            logger.error('execute model.build() before model.initiate_service()')
+            raise Exception('Model Service Initiation Error: Trying to initiate service before building the model.')
+        BaseModel.initiate_service(self)
+
+        for network_name, param_list in self.param_groups.items():
+            self.add_param_saver(network_name, param_list)
 
     def _define_placeholders(self):
         self.ph_X = tf.placeholder(tf.float32, [None, H.input_size])
