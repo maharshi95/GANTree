@@ -8,7 +8,7 @@ import tensorflow as tf
 from mpl_toolkits.mplot3d import Axes3D
 from tensorflow.contrib import layers
 
-import run
+import train
 
 fig = plt.figure(figsize=(15, 5))
 a1 = fig.add_subplot(231)
