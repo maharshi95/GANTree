@@ -77,9 +77,11 @@ max_epochs = 20000
 
 n_step_console_log = 200
 n_step_tboard_log = 10
-n_step_validation = 100
+n_step_validation = 50
 n_step_iter_save = 1000
-n_step_visualize = 1000
+n_step_visualize = 500
+n_step_generator = 10
+n_step_generator_decay = 1000
 
 en_loss_history = []
 de_loss_history = []
@@ -101,10 +103,13 @@ while iter_no < max_epochs:
 
     model.step_train_autoencoder(train_inputs)
 
-    if (iter_no % 10) == 0:
+    if (iter_no % n_step_generator) == 0:
         model.step_train_adv_generator(train_inputs)
     else:
         model.step_train_discriminator(train_inputs)
+
+    if (iter_no % n_step_generator_decay) == 0:
+        n_step_generator -= 1
 
     network_losses = [
         model.encoder_loss,
@@ -135,7 +140,7 @@ while iter_no < max_epochs:
     if iter_no % n_step_iter_save == 0:
         model.save_params(iter_no=iter_no)
 
-    if iter_no % n_step_visualize == 0:
+    if iter_no % n_step_visualize == 0 or (iter_no < n_step_visualize and iter_no % 100 == 0):
         def get_x_plots_data(x_input):
             _, x_real_true, x_real_false = model.discriminate(x_input)
             z_real_true = model.encode(x_real_true)
@@ -155,7 +160,7 @@ while iter_no < max_epochs:
         def get_z_plots_data(z_input):
             x_input = model.decode(z_input)
             x_plots = get_x_plots_data(x_input)
-            return [x_input] + x_plots[:-1]
+            return [z_input] + x_plots[:-1]
 
 
         th = np.random.uniform(0, 2 * np.pi, 800)
