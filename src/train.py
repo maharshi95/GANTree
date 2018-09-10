@@ -1,14 +1,21 @@
 from __future__ import division, print_function, absolute_import
 import os, argparse, logging
+import time
 import traceback
 
 import numpy as np
-from utils import bash_utils
+from matplotlib import pyplot as plt
+from utils import viz_utils
+
+import paths
+from utils import bash_utils, model_utils
 
 logger = logging.getLogger(__name__)
+LOG_FORMAT = "[{}: %(filename)s: %(lineno)3s] %(levelname)s: %(funcName)s(): %(message)s".format('growing_gans')
 logging.basicConfig(level=logging.INFO)
 
 parser = argparse.ArgumentParser()
+model_utils.setup_dirs()
 
 parser.add_argument('-g', '--gpu', default=0, help='index of the gpu to be used. default: 0')
 parser.add_argument('-r', '--resume', nargs='?', const=True, default=False,
@@ -60,16 +67,19 @@ if resume_flag is not False:
         logger.error(ex)
         logger.error('Some Problem Occured while resuming... starting from iteration 1')
         raise Exception('Not found...')
+else:
+    iter_no = 0
 
 x_train, x_test = dl.broken_circle()
 print('Train Test Data loaded...')
 
-epochs = 200
+max_epochs = 20000
 
-n_step_console_log = 10
-n_step_tboard_log = 1
-n_step_validation = 1
-n_step_iter_save = 20
+n_step_console_log = 200
+n_step_tboard_log = 10
+n_step_validation = 100
+n_step_iter_save = 1000
+n_step_visualize = 1000
 
 en_loss_history = []
 de_loss_history = []
@@ -78,8 +88,10 @@ d_acc_history = []
 g_acc_history = []
 gen_loss_history = []
 
-for iter_no in range(epochs):
+while iter_no < max_epochs:
     iter_no += 1
+
+    iter_time_start = time.time()
 
     z_train = np.random.uniform(-1, 1, [x_train.shape[0], 1])
     z_test = np.random.uniform(-1, 1, [x_test.shape[0], 1])
@@ -104,8 +116,7 @@ for iter_no in range(epochs):
     ]
 
     train_losses = model.compute_losses(train_inputs, network_losses)
-    test_losses = model.compute_losses(test_inputs, network_losses)
-
+    #
     if iter_no % n_step_console_log == 0:
         print('Step %i: Encoder Loss: %f' % (iter_no, train_losses[0]))
         print('Step %i: Disc Acc: %f' % (iter_no, train_losses[1]))
@@ -116,7 +127,51 @@ for iter_no in range(epochs):
 
     if iter_no % n_step_tboard_log == 0:
         model.get_logger('train').add_summary(train_losses[-1], iter_no)
+
+    if iter_no % n_step_validation == 0:
+        test_losses = model.compute_losses(test_inputs, network_losses)
         model.get_logger('test').add_summary(test_losses[-1], iter_no)
 
-    if iter_no % n_step_iter_save:
+    if iter_no % n_step_iter_save == 0:
         model.save_params(iter_no=iter_no)
+
+    if iter_no % n_step_visualize == 0:
+        def get_x_plots_data(x_input):
+            _, x_real_true, x_real_false = model.discriminate(x_input)
+            z_real_true = model.encode(x_real_true)
+            z_real_false = model.encode(x_real_false)
+            x_recon = model.reconstruct_x(x_input)
+            _, x_recon_true, x_recon_false = model.discriminate(x_recon)
+            z_recon_true = model.encode(x_recon_true)
+            z_recon_false = model.encode(x_recon_false)
+            return [
+                (x_real_true, x_real_false),
+                (z_real_true, z_real_false),
+                (x_recon_true, x_recon_false),
+                (z_recon_true, z_recon_false)
+            ]
+
+
+        def get_z_plots_data(z_input):
+            x_input = model.decode(z_input)
+            x_plots = get_x_plots_data(x_input)
+            return [x_input] + x_plots[:-1]
+
+
+        th = np.random.uniform(0, 2 * np.pi, 800)
+        x_full_circle = np.hstack([np.cos(th)[:, None], np.sin(th)[:, None]])
+
+        x_plots_row1 = get_x_plots_data(x_test)
+        z_plots_row2 = get_z_plots_data(z_test)
+        x_plots_row3 = get_x_plots_data(x_full_circle)
+        plots_data = (x_plots_row1, z_plots_row2, x_plots_row3)
+        figure = viz_utils.get_figure(plots_data)
+        figure_name = 'plots-iter-%d' % iter_no
+        figure_path = paths.get_result_path(figure_name)
+        figure.savefig(figure_path)
+        plt.close(figure)
+
+    iter_time_end = time.time()
+
+    if iter_no % n_step_console_log == 0:
+        print('Single Iter Time: %.4f' % (iter_time_end - iter_time_start))

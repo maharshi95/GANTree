@@ -1,42 +1,14 @@
 # Autoencoder
-import os, logging
+import logging
+import numpy as np
 import tensorflow as tf
+
+from model_components import encoder, decoder, disc
 from models.base import BaseModel
 from hyperparams.base import Hyperparams as H
-from tensorflow.contrib import layers
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
-
-
-def encoder(x):
-    with tf.variable_scope('encoder', reuse=tf.AUTO_REUSE):
-        fc1 = layers.fully_connected(x, 128, scope='fc1', reuse=tf.AUTO_REUSE)
-        fc2 = layers.fully_connected(fc1, 64, scope='fc2', reuse=tf.AUTO_REUSE)
-        fc3 = layers.fully_connected(fc2, 1, activation_fn=None, scope='fc3', reuse=tf.AUTO_REUSE)
-        # [B, xsize]
-        return fc3
-
-
-def decoder(x):
-    with tf.variable_scope('decoder', reuse=tf.AUTO_REUSE):
-        fc1 = layers.fully_connected(x, 64, scope='fc1', reuse=tf.AUTO_REUSE)
-        fc2 = layers.fully_connected(fc1, 128, scope='fc2', reuse=tf.AUTO_REUSE)
-        fc3 = layers.fully_connected(fc2, 2, activation_fn=tf.tanh, scope='fc3', reuse=tf.AUTO_REUSE)
-        # [B, zsize]
-        return fc3
-
-
-def disc(x):
-    with tf.variable_scope('discriminator', reuse=tf.AUTO_REUSE):
-        fc1 = layers.fully_connected(x, 128, scope='fc1', reuse=tf.AUTO_REUSE)
-        fc2 = layers.fully_connected(fc1, 128, scope='fc2', reuse=tf.AUTO_REUSE)
-        fc3 = layers.fully_connected(fc2, 128, scope='fc3', reuse=tf.AUTO_REUSE)
-        fc4 = layers.fully_connected(fc3, 128, scope='fc4', reuse=tf.AUTO_REUSE)
-        # [B, 2]
-        logits = layers.fully_connected(fc4, 2, activation_fn=None, scope='logits', reuse=tf.AUTO_REUSE)
-
-        return logits
 
 
 class Model(BaseModel):
@@ -79,14 +51,17 @@ class Model(BaseModel):
 
     def _define_network_graph(self):
         with tf.variable_scope(self.model_scope, reuse=tf.AUTO_REUSE):
+            # X - Z - X Iteration
             self.x_real = self.ph_X
             self.z_real = encoder(self.x_real)
             self.x_recon = decoder(self.z_real)
 
+            # Z - X - Z Iteration
             self.z_rand = self.ph_Z
             self.x_fake = decoder(self.z_rand)
             self.z_recon = encoder(self.x_fake)
 
+            # Disc Iteration
             self.logits_real = disc(self.x_real)
             self.logits_fake = disc(self.x_fake)
 
@@ -111,8 +86,8 @@ class Model(BaseModel):
         self.disc_real_preds = tf.argmax(self.logits_real, axis=-1)
         self.disc_fake_preds = tf.argmax(self.logits_fake, axis=-1)
 
-        self.disc_real_acc = 100 * tf.reduce_mean(tf.cast(self.disc_real_preds == 0., H.dtype))
-        self.disc_fake_acc = 100 * tf.reduce_mean(tf.cast(self.disc_fake_preds == 1., H.dtype))
+        self.disc_real_acc = 100 * tf.reduce_mean(tf.cast(tf.equal(self.disc_real_preds, 0), H.dtype))
+        self.disc_fake_acc = 100 * tf.reduce_mean(tf.cast(tf.equal(self.disc_fake_preds, 1), H.dtype))
 
         self.disc_acc = 0.5 * (self.disc_real_acc + self.disc_fake_acc)
         self.gen_acc = 100 - self.disc_fake_acc
@@ -137,6 +112,9 @@ class Model(BaseModel):
             tf.summary.histogram('z_rand', self.z_rand),
             tf.summary.histogram('z_real', self.z_real),
             tf.summary.histogram('z_recon', self.z_recon),
+
+            tf.summary.histogram('fake_preds', self.disc_real_preds),
+            tf.summary.histogram('real_preds', self.disc_fake_preds),
         ]
 
         self.summaries = tf.summary.merge(summaries_list)
@@ -153,43 +131,76 @@ class Model(BaseModel):
         self.autoencoder_train_op = tf.train.RMSPropOptimizer(H.lr_autoencoder) \
             .minimize(self.encoder_loss, var_list=autoencoder_trainable_params)
 
+        decoder_params = tf.trainable_variables(self.decoder_scope)
         self.adv_gen_train_op = tf.train.RMSPropOptimizer(H.lr_decoder) \
-            .minimize(self.gen_loss, var_list=tf.trainable_variables(self.decoder_scope))
+            .minimize(self.gen_loss, var_list=decoder_params)
 
+        disc_params = tf.trainable_variables(self.disc_scope)
         self.adv_disc_train_op = tf.train.RMSPropOptimizer(H.lr_disc) \
-            .minimize(self.disc_loss, var_list=tf.trainable_variables(self.disc_scope))
+            .minimize(self.disc_loss, var_list=disc_params)
 
     def step_train_autoencoder(self, inputs):
-        x_train, z_train = inputs
+        x_input, z_input = inputs
         self.session.run(self.autoencoder_train_op, feed_dict={
-            self.ph_X: x_train,
-            self.ph_Z: z_train,
+            self.ph_X: x_input,
+            self.ph_Z: z_input,
         })
 
     def step_train_adv_generator(self, inputs):
-        x_train, z_train = inputs
+        x_input, z_input = inputs
         self.session.run(self.adv_gen_train_op, feed_dict={
-            self.ph_X: x_train,
-            self.ph_Z: z_train,
+            self.ph_X: x_input,
+            self.ph_Z: z_input,
         })
 
     def step_train_discriminator(self, inputs):
-        x_train, z_train = inputs
+        x_input, z_input = inputs
         self.session.run(self.adv_disc_train_op, feed_dict={
-            self.ph_X: x_train,
-            self.ph_Z: z_train,
+            self.ph_X: x_input,
+            self.ph_Z: z_input,
         })
 
     def compute_losses(self, inputs, losses):
-        x_train, z_train = inputs
+        x_input, z_input = inputs
         network_outputs = self.session.run(losses, feed_dict={
-            self.ph_X: x_train,
-            self.ph_Z: z_train,
+            self.ph_X: x_input,
+            self.ph_Z: z_input,
         })
         return network_outputs
 
     def run(self, fetches, feed_dict=None, options=None, run_metadata=None):
         return self.session.run(fetches, feed_dict, options, run_metadata)
+
+    def encode(self, x_batch):
+        return self.session.run(self.z_real, {
+            self.ph_X: x_batch
+        })
+
+    def decode(self, z_batch):
+        return self.session.run(self.x_fake, {
+            self.ph_Z: z_batch
+        })
+
+    def reconstruct_x(self, x_batch):
+        return self.session.run(self.x_recon, {
+            self.ph_X: x_batch
+        })
+
+    def reconstruct_z(self, z_batch):
+        return self.session.run(self.z_recon, {
+            self.ph_Z: z_batch
+        })
+
+    def discriminate(self, x_batch, split=True):
+        preds = self.session.run(self.disc_real_preds, {
+            self.ph_X: x_batch
+        })
+        if split:
+            x_batch_real = x_batch[np.where(preds == 0)]
+            x_batch_fake = x_batch[np.where(preds == 1)]
+            return preds, x_batch_real, x_batch_fake
+        else:
+            return preds
 
 
 if __name__ == '__main__':
