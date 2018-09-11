@@ -1,31 +1,39 @@
 from __future__ import division, print_function, absolute_import
-import os, argparse, logging
-import time
-import traceback
+import os, time, argparse, logging, traceback
 
 import numpy as np
 from matplotlib import pyplot as plt
-from utils import viz_utils
+from exp_context import ExperimentContext
 
-import paths
-from utils import bash_utils, model_utils
-
-logger = logging.getLogger(__name__)
-LOG_FORMAT = "[{}: %(filename)s: %(lineno)3s] %(levelname)s: %(funcName)s(): %(message)s".format('growing_gans')
-logging.basicConfig(level=logging.INFO)
+# Setting up Argument parser
 
 parser = argparse.ArgumentParser()
-model_utils.setup_dirs()
 
 parser.add_argument('-g', '--gpu', default=0, help='index of the gpu to be used. default: 0')
 parser.add_argument('-r', '--resume', nargs='?', const=True, default=False,
                     help='if present, the training resumes from the latest step, '
                          'for custom step number, provide it as argument value')
-parser.add_argument('-d', '--delete', nargs='+', default=[], choices=['logs', 'weights'], help='delete the entities')
+parser.add_argument('-d', '--delete', nargs='+', default=[], choices=['logs', 'weights', 'results'], help='delete the entities')
 parser.add_argument('-w', '--weights', nargs='?', default='iter', choices=['iter', 'best_gen', 'best_pred'],
                     help='weight type to load if resume flag is provided. default: iter')
+parser.add_argument('-hp', '--hyperparams', required=True, help='hyperparam class to use from HyperparamFactory')
+parser.add_argument('-en', '--exp_name', default=None, help='experiment name. if not provided, it is taken from Hyperparams')
 
 args = parser.parse_args()
+
+ExperimentContext.set_context(args.hyperparams, args.exp_name)
+print('EXP CONTEXT',ExperimentContext)
+
+logger = logging.getLogger(__name__)
+LOG_FORMAT = "[{}: %(filename)s: %(lineno)3s] %(levelname)s: %(funcName)s(): %(message)s".format('growing_gans')
+logging.basicConfig(level=logging.INFO)
+
+from utils import viz_utils
+
+import paths
+from utils import bash_utils, model_utils
+
+model_utils.setup_dirs()
 
 gpu_idx = str(args.gpu)
 
@@ -43,7 +51,7 @@ if 'weights' in args.delete:
     bash_utils.delete_recursive(paths.all_weights_dir)
     print('')
 
-from data import DataLoader
+from dataloader import DataLoader
 from models.bcgan import Model
 
 dl = DataLoader()
@@ -109,7 +117,7 @@ while iter_no < max_epochs:
         model.step_train_discriminator(train_inputs)
 
     if (iter_no % n_step_generator_decay) == 0:
-        n_step_generator -= 1
+        n_step_generator = max(n_step_generator - 1, 1)
 
     network_losses = [
         model.encoder_loss,

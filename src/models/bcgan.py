@@ -5,7 +5,9 @@ import tensorflow as tf
 
 from model_components import encoder, decoder, disc
 from models.base import BaseModel
-from hyperparams.base import Hyperparams as H
+from exp_context import ExperimentContext
+
+H = ExperimentContext.hyperparams
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -16,7 +18,7 @@ class Model(BaseModel):
     def __init__(self, model_name):
         BaseModel.__init__(self, model_name)
         self.model_scope = 'growing_gans'
-        self.__is_model_build = False
+        self.__is_model_built = False
 
     def build(self):
         self._define_placeholders()
@@ -33,10 +35,10 @@ class Model(BaseModel):
         for param in tf.trainable_variables(self.model_scope):
             logger.info(param)
 
-        self.__is_model_build = True
+        self.__is_model_built = True
 
     def initiate_service(self):
-        if not self.__is_model_build:
+        if not self.__is_model_built:
             logger.error('Model Service Initiation Error: Trying to initiate service before building the model.')
             logger.error('execute model.build() before model.initiate_service()')
             raise Exception('Model Service Initiation Error: Trying to initiate service before building the model.')

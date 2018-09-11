@@ -11,3 +11,6 @@ class Hyperparams:
     lr_autoencoder = 0.0001
     lr_decoder = 0.0001
     lr_disc = 0.0001
+
+    model = 'bcgan'
+    exp_name = 'bcgan_0'

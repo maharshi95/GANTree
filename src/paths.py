@@ -1,14 +1,17 @@
 import os.path as osp
+from exp_context import ExperimentContext
+
+exp_name = ExperimentContext.exp_name
 
 # Make sure to put the corresponding line in function src.utils.model_utils.setup_dirs after adding/modifying a directory path
 
 # data_base_dir = '../data'
 data_base_dir = '../../datasets'
-logs_base_dir = '../logs/'
-weights_base_dir = '../weights/'
-results_base_dir = '../results/'
+logs_base_dir = osp.join('../experiments', exp_name, 'logs')
+weights_base_dir = osp.join('../experiments', exp_name, 'weights')
+results_base_dir = osp.join('../experiments', exp_name, 'results')
 
-temp_dir = osp.join(results_base_dir, '../temp/')
+temp_dir = osp.join(results_base_dir, '.temp')
 
 # NOT SET YET
 train_data = ''
@@ -36,24 +39,8 @@ def get_result_path(path):
     return osp.join(results_base_dir, path)
 
 
-def get_recon_path(path):
-    return osp.join(recon_dir, path)
-
-
-def get_hist_path(path):
-    return osp.join(hist_dir, path)
-
-
-def get_gen_path(path):
-    return osp.join(gen_dir, path)
-
-
 def get_temp_file_path(path):
     return osp.join(temp_dir, path)
-
-
-def get_nn_path(path):
-    return osp.join(nn_dir, path)
 
 
 def get_saved_params_path(dir_name, net_name, weight_label, iter_no):
