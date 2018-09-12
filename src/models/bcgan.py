@@ -50,6 +50,7 @@ class Model(BaseModel):
     def _define_placeholders(self):
         self.ph_X = tf.placeholder(tf.float32, [None, H.input_size])
         self.ph_Z = tf.placeholder(tf.float32, [None, H.z_size])
+        self.ph_plot_img = tf.placeholder(tf.float32, [None, None, None, 4])
 
     def _define_network_graph(self):
         with tf.variable_scope(self.model_scope, reuse=tf.AUTO_REUSE):
@@ -120,6 +121,7 @@ class Model(BaseModel):
         ]
 
         self.summaries = tf.summary.merge(summaries_list)
+        self.img_summary = tf.summary.image('viz_plots', self.ph_plot_img)
 
     def _create_param_groups(self):
         self.add_param_group('encoder', tf.global_variables(self.model_scope + '/encoder'))
@@ -203,6 +205,12 @@ class Model(BaseModel):
             return preds, x_batch_real, x_batch_fake
         else:
             return preds
+
+    def log_image(self, logger_name, image, iter_no):
+        summary = self.session.run(self.img_summary, feed_dict={
+            self.ph_plot_img: image[None, :, :, :]
+        })
+        self.loggers[logger_name].add_summary(summary, global_step=iter_no)
 
 
 if __name__ == '__main__':

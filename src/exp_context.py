@@ -10,7 +10,7 @@ class ExperimentContext:
     """
     hyperparams_name = None
     hyperparams = None
-    model = None
+    Model = None
     exp_name = None
 
     @classmethod
@@ -18,7 +18,7 @@ class ExperimentContext:
         cls.hyperparams_name = hyperparams_name
         cls.exp_name = exp_name or cls.hyperparams.exp_name
         cls.hyperparams = HyperparamsFactory.get_hyperparams(cls.hyperparams_name)
-        cls.model = ModelFactory.get_model(cls.hyperparams.model)
+        cls.Model = ModelFactory.get_model(cls.hyperparams.model)
 
     @classmethod
     def __repr__(cls):

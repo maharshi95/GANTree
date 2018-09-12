@@ -22,18 +22,15 @@ parser.add_argument('-en', '--exp_name', default=None, help='experiment name. if
 args = parser.parse_args()
 
 ExperimentContext.set_context(args.hyperparams, args.exp_name)
-print('EXP CONTEXT',ExperimentContext)
 
 logger = logging.getLogger(__name__)
-LOG_FORMAT = "[{}: %(filename)s: %(lineno)3s] %(levelname)s: %(funcName)s(): %(message)s".format('growing_gans')
-logging.basicConfig(level=logging.INFO)
-
-from utils import viz_utils
+LOG_FORMAT = "[{}: %(filename)s: %(lineno)3s] %(levelname)s: %(funcName)s(): %(message)s".format(ExperimentContext.exp_name)
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
 import paths
+from utils import viz_utils
 from utils import bash_utils, model_utils
-
-model_utils.setup_dirs()
+from dataloader import DataLoader
 
 gpu_idx = str(args.gpu)
 
@@ -51,8 +48,14 @@ if 'weights' in args.delete:
     bash_utils.delete_recursive(paths.all_weights_dir)
     print('')
 
-from dataloader import DataLoader
-from models.bcgan import Model
+if 'results' in args.delete:
+    logger.warning('Deleting all results in {}...'.format(paths.results_base_dir))
+    bash_utils.delete_recursive(paths.results_base_dir)
+    print('')
+
+model_utils.setup_dirs()
+
+Model = ExperimentContext.Model
 
 dl = DataLoader()
 
@@ -78,16 +81,16 @@ if resume_flag is not False:
 else:
     iter_no = 0
 
-x_train, x_test = dl.broken_circle()
+x_train, x_test = dl.broken_segments()
 print('Train Test Data loaded...')
 
-max_epochs = 20000
+max_epochs = 100000
 
-n_step_console_log = 200
+n_step_console_log = 500
 n_step_tboard_log = 10
 n_step_validation = 50
-n_step_iter_save = 1000
-n_step_visualize = 500
+n_step_iter_save = 2000
+n_step_visualize = 1000
 n_step_generator = 10
 n_step_generator_decay = 1000
 
@@ -113,6 +116,7 @@ while iter_no < max_epochs:
 
     if (iter_no % n_step_generator) == 0:
         model.step_train_adv_generator(train_inputs)
+        pass
     else:
         model.step_train_discriminator(train_inputs)
 
@@ -148,15 +152,19 @@ while iter_no < max_epochs:
     if iter_no % n_step_iter_save == 0:
         model.save_params(iter_no=iter_no)
 
-    if iter_no % n_step_visualize == 0 or (iter_no < n_step_visualize and iter_no % 100 == 0):
+    if iter_no % n_step_visualize == 0 or (iter_no < n_step_visualize and iter_no % 200 == 0):
         def get_x_plots_data(x_input):
             _, x_real_true, x_real_false = model.discriminate(x_input)
+
             z_real_true = model.encode(x_real_true)
             z_real_false = model.encode(x_real_false)
+
             x_recon = model.reconstruct_x(x_input)
             _, x_recon_true, x_recon_false = model.discriminate(x_recon)
+
             z_recon_true = model.encode(x_recon_true)
             z_recon_false = model.encode(x_recon_false)
+
             return [
                 (x_real_true, x_real_false),
                 (z_real_true, z_real_false),
@@ -172,17 +180,19 @@ while iter_no < max_epochs:
 
 
         th = np.random.uniform(0, 2 * np.pi, 800)
-        x_full_circle = np.hstack([np.cos(th)[:, None], np.sin(th)[:, None]])
+        x_full = np.random.uniform(-1, 1, (1000, 2))
 
         x_plots_row1 = get_x_plots_data(x_test)
         z_plots_row2 = get_z_plots_data(z_test)
-        x_plots_row3 = get_x_plots_data(x_full_circle)
+        x_plots_row3 = get_x_plots_data(x_full)
         plots_data = (x_plots_row1, z_plots_row2, x_plots_row3)
         figure = viz_utils.get_figure(plots_data)
-        figure_name = 'plots-iter-%d' % iter_no
+        figure_name = 'plots-iter-%d.png' % iter_no
         figure_path = paths.get_result_path(figure_name)
         figure.savefig(figure_path)
         plt.close(figure)
+        img = plt.imread(figure_path)
+        model.log_image('test', img, iter_no)
 
     iter_time_end = time.time()
 
