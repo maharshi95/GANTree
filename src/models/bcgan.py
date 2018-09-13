@@ -17,7 +17,6 @@ class Model(BaseModel):
 
     def __init__(self, model_name, session=None):
         BaseModel.__init__(self, model_name, session)
-        self.model_scope = model_name
         self.__is_model_built = False
 
     def build(self):

@@ -13,6 +13,7 @@ class BaseModel():
 
     def __init__(self, model_name, session=None):
         self.model_name = model_name
+        self.model_scope = model_name
         # Weight Savers and Loaders
         self.param_groups = {}
         self.loggers = {}
@@ -40,10 +41,12 @@ class BaseModel():
             config.gpu_options.allow_growth = True
 
             self.session = tf.Session(config=config)
-            self.session.run(tf.global_variables_initializer())
 
-            for name in ['train', 'test']:
-                self.add_logger(name, paths.log_writer_path(name))
+        init = tf.variables_initializer(tf.global_variables(self.model_name))
+        self.session.run(init)
+
+        for name in ['train', 'test']:
+            self.add_logger(name, paths.log_writer_path(name))
 
     @property
     def network_names(self):

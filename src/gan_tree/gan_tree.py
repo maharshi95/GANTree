@@ -1,4 +1,5 @@
 import numpy as np
+import tensorflow as tf
 from sklearn import mixture
 from exp_context import ExperimentContext
 
@@ -29,6 +30,48 @@ class GNode(object):
     def params(self, all_params):
         self.means, self.cov, self.cond_prob, self.prob = all_params
 
+    def sample(self, n_samples=1):
+        return np.random.multivariate_normal(self.means, self.cov, n_samples)
+
+
+class GANSet(object):
+    def __init__(self, session, gan_nodes):
+        self.gans = gan_nodes
+        self.session = session
+
+    def __getitem__(self, item):
+        # type: (int) -> GNode
+        return self.gans[item]
+
+    def __iter__(self):
+        return iter(self.gans)
+
+    def __len__(self):
+        # type: () -> int
+        return len(self.gans)
+
+    @property
+    def size(self):
+        return len(self.gans)
+
+    @property
+    def means(self):
+        return np.array([self[i].means for i in range(self.size)])
+
+    @property
+    def cov(self):
+        return np.array([self[i].cov for i in range(self.size)])
+
+    @property
+    def probs(self):
+        return np.array([self[i].prob for i in range(self.size)])
+
+    def sample_z_batch(self, n_samples):
+        probs = np.array([gan.prob for gan in self.gans])
+        gan_ids = np.random.choice(range(self.size), size=n_samples, p=probs)
+        z_batch = np.array([self[gan_id].sample()[0] for gan_id in gan_ids])
+        return z_batch
+
 
 class GanTree(object):
     def __init__(self, name, Model, x_batch, n_child=2):
@@ -46,6 +89,11 @@ class GanTree(object):
     def initiate(self):
         assert self._is_initiated == False
         params = np.zeros(self.H.z_size), np.eye(self.H.z_size), 1.0, 1.0
+
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+
+        self.session = tf.Session(config=config)
         self.add_node(params, parent_id=-1)
         self._is_initiated = True
 
@@ -59,7 +107,7 @@ class GanTree(object):
     def add_node(self, params, parent_id=-1):
         new_node_id = len(self.nodes)
         model_name = "%s-%d" % (self.name, new_node_id)
-        model = self.Model(model_name)
+        model = self.Model(model_name, session=self.session)
         model.build()
         model.initiate_service()
 
@@ -91,15 +139,15 @@ class GanTree(object):
             child_node_params = means, cov, cond_prob, prob
             self.add_node(child_node_params, parent_id=parent_id)
 
-    def get_generators(self, k):
+    def get_gans(self, k_clusters):
         nodes = {self.nodes[0]}
-        for i in range(k - 1):
+        for i in range(k_clusters - 1):
             split_node_id = self.split_history[i]
             split_node = self.nodes[split_node_id]
             nodes.remove(split_node)
             for child_node_id in split_node.child:
                 nodes.add(self.nodes[child_node_id])
-        return nodes
+        return GANSet(self.session, list(nodes))
 
     def _recursive_shutdown(self, node_id):
         for child_node_id in self.nodes[node_id].child:
