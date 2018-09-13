@@ -1,4 +1,5 @@
 import numpy as np
+from utils import np_utils
 
 
 class DataLoader(object):
@@ -47,3 +48,12 @@ class DataLoader(object):
         training, test = data[:n_train, :], data[n_train:, :]
 
         return training, test
+
+    def get_z_dist(self, n_samples, dim=1, dist_type='normal'):
+        if dist_type == 'uniform':
+            return np.random.uniform(-1, 1, (n_samples, dim))
+        if dist_type == 'normal':
+            return np.random.normal(0, 1, (n_samples, dim))
+        if dist_type == 'sphere':
+            return np_utils.unit_norm(np.random.normal(0, 1, (n_samples, dim)), axis=-1)
+        raise Exception('Invalid dist_type: {}'.format(dist_type))

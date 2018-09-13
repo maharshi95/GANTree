@@ -7,7 +7,7 @@ from model_components import encoder, decoder, disc
 from models.base import BaseModel
 from exp_context import ExperimentContext
 
-H = ExperimentContext.hyperparams
+H = ExperimentContext.Hyperparams
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -15,9 +15,9 @@ logging.basicConfig(level=logging.INFO)
 
 class Model(BaseModel):
 
-    def __init__(self, model_name):
-        BaseModel.__init__(self, model_name)
-        self.model_scope = 'growing_gans'
+    def __init__(self, model_name, session=None):
+        BaseModel.__init__(self, model_name, session)
+        self.model_scope = model_name
         self.__is_model_built = False
 
     def build(self):
@@ -30,10 +30,11 @@ class Model(BaseModel):
         self._define_operations()
         self._create_param_groups()
 
-        logger.info('Model Definition complete')
-        logger.info('Model Params:')
-        for param in tf.trainable_variables(self.model_scope):
-            logger.info(param)
+        logger.info('%s: Model Definition complete' % repr(self))
+
+        # logger.info('%s: Model Params:' % repr(self))
+        # for param in tf.trainable_variables(self.model_scope):
+        #     logger.info(param)
 
         self.__is_model_built = True
 
@@ -79,7 +80,7 @@ class Model(BaseModel):
         self.disc_loss_real = tf.losses.softmax_cross_entropy(real_labels, self.logits_real)
         self.disc_loss_fake = tf.losses.softmax_cross_entropy(fake_labels, self.logits_fake)
 
-        self.gen_loss = tf.losses.softmax_cross_entropy(real_labels, self.logits_fake)
+        self.gen_loss = 0.2 * tf.losses.softmax_cross_entropy(real_labels, self.logits_fake)
 
         self.encoder_loss = self.x_recon_loss + self.z_recon_loss
         self.decoder_loss = self.encoder_loss + 0 * self.gen_loss
@@ -101,27 +102,28 @@ class Model(BaseModel):
         self.disc_scope = self.model_scope + '/disc'
 
     def _define_summaries(self):
-        summaries_list = [
-            tf.summary.scalar('x_recon_loss', self.x_recon_loss),
-            tf.summary.scalar('z_recon_loss', self.z_recon_loss),
-            tf.summary.scalar('encoder_loss', self.encoder_loss),
-            tf.summary.scalar('gen_loss', self.z_recon_loss),
-            tf.summary.scalar('disc_loss', self.disc_loss),
-            tf.summary.scalar('gen_acc', self.gen_acc),
-            tf.summary.scalar('disc_acc', self.disc_acc),
-            tf.summary.scalar('disc_real_acc', self.disc_real_acc),
-            tf.summary.scalar('disc_fake_acc', self.disc_fake_acc),
+        with tf.variable_scope(self.model_scope, reuse=tf.AUTO_REUSE):
+            summaries_list = [
+                tf.summary.scalar('x_recon_loss', self.x_recon_loss),
+                tf.summary.scalar('z_recon_loss', self.z_recon_loss),
+                tf.summary.scalar('encoder_loss', self.encoder_loss),
+                tf.summary.scalar('gen_loss', self.z_recon_loss),
+                tf.summary.scalar('disc_loss', self.disc_loss),
+                tf.summary.scalar('gen_acc', self.gen_acc),
+                tf.summary.scalar('disc_acc', self.disc_acc),
+                tf.summary.scalar('disc_real_acc', self.disc_real_acc),
+                tf.summary.scalar('disc_fake_acc', self.disc_fake_acc),
 
-            tf.summary.histogram('z_rand', self.z_rand),
-            tf.summary.histogram('z_real', self.z_real),
-            tf.summary.histogram('z_recon', self.z_recon),
+                tf.summary.histogram('z_rand', self.z_rand),
+                tf.summary.histogram('z_real', self.z_real),
+                tf.summary.histogram('z_recon', self.z_recon),
 
-            tf.summary.histogram('fake_preds', self.disc_real_preds),
-            tf.summary.histogram('real_preds', self.disc_fake_preds),
-        ]
+                tf.summary.histogram('fake_preds', self.disc_real_preds),
+                tf.summary.histogram('real_preds', self.disc_fake_preds),
+            ]
 
-        self.summaries = tf.summary.merge(summaries_list)
-        self.img_summary = tf.summary.image('viz_plots', self.ph_plot_img)
+            self.summaries = tf.summary.merge(summaries_list)
+            self.img_summary = tf.summary.image('viz_plots', self.ph_plot_img)
 
     def _create_param_groups(self):
         self.add_param_group('encoder', tf.global_variables(self.model_scope + '/encoder'))
@@ -131,17 +133,30 @@ class Model(BaseModel):
         self.add_param_group('all', tf.global_variables(self.model_scope))
 
     def _define_operations(self):
-        autoencoder_trainable_params = tf.trainable_variables(self.encoder_scope) + tf.trainable_variables(self.decoder_scope)
-        self.autoencoder_train_op = tf.train.RMSPropOptimizer(H.lr_autoencoder) \
-            .minimize(self.encoder_loss, var_list=autoencoder_trainable_params)
+        with tf.variable_scope('', reuse=tf.AUTO_REUSE):
+            autoencoder_trainable_params = tf.trainable_variables(self.encoder_scope) + tf.trainable_variables(self.decoder_scope)
+            opt = tf.train.RMSPropOptimizer(H.lr_autoencoder)
+            self.autoencoder_train_op = opt.minimize(self.encoder_loss, var_list=autoencoder_trainable_params)
 
-        decoder_params = tf.trainable_variables(self.decoder_scope)
-        self.adv_gen_train_op = tf.train.RMSPropOptimizer(H.lr_decoder) \
-            .minimize(self.gen_loss, var_list=decoder_params)
+            decoder_params = tf.trainable_variables(self.decoder_scope)
+            opt = tf.train.RMSPropOptimizer(H.lr_autoencoder)
+            self.adv_gen_train_op = opt.minimize(self.gen_loss, var_list=decoder_params)
 
-        disc_params = tf.trainable_variables(self.disc_scope)
-        self.adv_disc_train_op = tf.train.RMSPropOptimizer(H.lr_disc) \
-            .minimize(self.disc_loss, var_list=disc_params)
+            disc_params = tf.trainable_variables(self.disc_scope)
+            opt = tf.train.RMSPropOptimizer(H.lr_autoencoder)
+            self.adv_disc_train_op = opt.minimize(self.disc_loss, var_list=disc_params)
+
+    @property
+    def network_loss_variables(self):
+        network_losses = [
+            self.encoder_loss,
+            self.disc_acc,
+            self.gen_acc,
+            self.x_recon_loss,
+            self.z_recon_loss,
+            self.summaries
+        ]
+        return network_losses
 
     def step_train_autoencoder(self, inputs):
         x_input, z_input = inputs

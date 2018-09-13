@@ -12,5 +12,9 @@ class Hyperparams:
     lr_decoder = 0.0001
     lr_disc = 0.0001
 
+    z_dist_type = 'normal'  # ['uniform', 'normal', 'sphere']
+
+    train_generator_adv = False
+
     model = 'bcgan'
     exp_name = 'bcgan_0'

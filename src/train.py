@@ -13,7 +13,8 @@ parser.add_argument('-g', '--gpu', default=0, help='index of the gpu to be used.
 parser.add_argument('-r', '--resume', nargs='?', const=True, default=False,
                     help='if present, the training resumes from the latest step, '
                          'for custom step number, provide it as argument value')
-parser.add_argument('-d', '--delete', nargs='+', default=[], choices=['logs', 'weights', 'results'], help='delete the entities')
+parser.add_argument('-d', '--delete', nargs='+', default=[], choices=['logs', 'weights', 'results', 'all'],
+                    help='delete the entities')
 parser.add_argument('-w', '--weights', nargs='?', default='iter', choices=['iter', 'best_gen', 'best_pred'],
                     help='weight type to load if resume flag is provided. default: iter')
 parser.add_argument('-hp', '--hyperparams', required=True, help='hyperparam class to use from HyperparamFactory')
@@ -38,30 +39,27 @@ os.environ['CUDA_VISIBLE_DEVICES'] = gpu_idx
 
 resume_flag = args.resume is not False
 
-if 'logs' in args.delete or resume_flag is False:
+if 'all' in args.delete or 'logs' in args.delete or resume_flag is False:
     logger.warning('Deleting Logs...')
     bash_utils.delete_recursive(paths.logs_base_dir)
     print('')
 
-if 'weights' in args.delete:
-    logger.warning('Deleting all weights in {}...'.format(paths.all_weights_dir))
-    bash_utils.delete_recursive(paths.all_weights_dir)
-    print('')
-
-if 'results' in args.delete:
+if 'all' in args.delete or 'results' in args.delete:
     logger.warning('Deleting all results in {}...'.format(paths.results_base_dir))
     bash_utils.delete_recursive(paths.results_base_dir)
     print('')
 
 model_utils.setup_dirs()
 
-Model = ExperimentContext.Model
+Model = ExperimentContext.get_model_class()
+H = ExperimentContext.get_hyperparams()
 
 dl = DataLoader()
 
 model = Model('growing-gans')
 model.build()
 model.initiate_service()
+
 print('Model service initiated...')
 
 if resume_flag is not False:
@@ -80,6 +78,11 @@ if resume_flag is not False:
         raise Exception('Not found...')
 else:
     iter_no = 0
+
+if 'all' in args.delete or 'weights' in args.delete:
+    logger.warning('Deleting all weights in {}...'.format(paths.all_weights_dir))
+    bash_utils.delete_recursive(paths.all_weights_dir)
+    print('')
 
 x_train, x_test = dl.broken_segments()
 print('Train Test Data loaded...')
@@ -106,8 +109,8 @@ while iter_no < max_epochs:
 
     iter_time_start = time.time()
 
-    z_train = np.random.uniform(-1, 1, [x_train.shape[0], 1])
-    z_test = np.random.uniform(-1, 1, [x_test.shape[0], 1])
+    z_train = dl.get_z_dist(x_train.shape[0], dist_type=H.z_dist_type)
+    z_test = dl.get_z_dist(x_test.shape[0], dist_type=H.z_dist_type)
 
     train_inputs = x_train, z_train
     test_inputs = x_test, z_test
@@ -115,24 +118,15 @@ while iter_no < max_epochs:
     model.step_train_autoencoder(train_inputs)
 
     if (iter_no % n_step_generator) == 0:
-        model.step_train_adv_generator(train_inputs)
-        pass
+        if H.train_generator_adv:
+            model.step_train_adv_generator(train_inputs)
     else:
         model.step_train_discriminator(train_inputs)
 
     if (iter_no % n_step_generator_decay) == 0:
         n_step_generator = max(n_step_generator - 1, 1)
 
-    network_losses = [
-        model.encoder_loss,
-        model.disc_acc,
-        model.gen_acc,
-        model.x_recon_loss,
-        model.z_recon_loss,
-        model.summaries
-    ]
-
-    train_losses = model.compute_losses(train_inputs, network_losses)
+    train_losses = model.compute_losses(train_inputs, model.network_loss_variables)
     #
     if iter_no % n_step_console_log == 0:
         print('Step %i: Encoder Loss: %f' % (iter_no, train_losses[0]))
@@ -146,7 +140,7 @@ while iter_no < max_epochs:
         model.get_logger('train').add_summary(train_losses[-1], iter_no)
 
     if iter_no % n_step_validation == 0:
-        test_losses = model.compute_losses(test_inputs, network_losses)
+        test_losses = model.compute_losses(test_inputs, model.network_loss_variables)
         model.get_logger('test').add_summary(test_losses[-1], iter_no)
 
     if iter_no % n_step_iter_save == 0:
@@ -180,7 +174,7 @@ while iter_no < max_epochs:
 
 
         th = np.random.uniform(0, 2 * np.pi, 800)
-        x_full = np.random.uniform(-1, 1, (1000, 2))
+        x_full = np.random.uniform(-2, 2, (1000, 2))
 
         x_plots_row1 = get_x_plots_data(x_test)
         z_plots_row2 = get_z_plots_data(z_test)

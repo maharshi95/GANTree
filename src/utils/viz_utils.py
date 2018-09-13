@@ -22,7 +22,7 @@ def get_figure(data, scatter_size=5):
         # ax0.set_aspect('equal')
 
         ax[1] = plt.subplot(gs[row_i * 4 + 1])
-        ax[1].set_xlim(-1, 1)
+        # ax[1].set_xlim(-1, 1)
         ax[1].hist(z_real[0], bins=50, ec='black', color='green')
         ax[1].hist(z_real[1], bins=50, ec='black', color='red')
 
@@ -33,7 +33,7 @@ def get_figure(data, scatter_size=5):
         ax[2].scatter(x_recon[1][:, 0], x_recon[1][:, 1], c='red', s=scatter_size)
 
         ax[3] = plt.subplot(gs[row_i * 4 + 3])
-        ax[3].set_xlim(-1, 1)
+        # ax[3].set_xlim(-1, 1)
         ax[3].hist(z_recon[0], bins=50, ec='black', color='green')
         ax[3].hist(z_recon[1], bins=50, ec='black', color='red')
 
@@ -54,7 +54,7 @@ def get_figure(data, scatter_size=5):
         # ax0.set_aspect('equal')
 
         ax[2] = plt.subplot(gs[row_i * 4 + 2])
-        ax[2].set_xlim(-1, 1)
+        # ax[2].set_xlim(-1, 1)
         ax[2].hist(z_real[0], bins=50, ec='black', color='green')
         ax[2].hist(z_real[1], bins=50, ec='black', color='red')
 

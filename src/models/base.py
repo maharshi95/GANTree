@@ -3,6 +3,7 @@ import logging
 import paths
 from abc import ABCMeta, abstractmethod
 import tensorflow as tf
+from tensorflow.contrib import framework as tf_framework
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 class BaseModel():
     __metaclass__ = ABCMeta
 
-    def __init__(self, model_name):
+    def __init__(self, model_name, session=None):
         self.model_name = model_name
         # Weight Savers and Loaders
         self.param_groups = {}
@@ -18,6 +19,10 @@ class BaseModel():
 
         self.param_savers = {}
         self.weights_path = {}
+        self.session = session
+
+    def __repr__(self):
+        return ('Model[%s]' % self.model_name)
 
     @abstractmethod
     def build(self):
@@ -30,14 +35,15 @@ class BaseModel():
         Summary Writers, Weight Savers will all be initiatized in this function after the build() function has been called.
         :return:
         """
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
+        if self.session is None:
+            config = tf.ConfigProto()
+            config.gpu_options.allow_growth = True
 
-        self.session = tf.InteractiveSession(config=config)
-        self.session.run(tf.global_variables_initializer())
+            self.session = tf.Session(config=config)
+            self.session.run(tf.global_variables_initializer())
 
-        for name in ['train', 'test']:
-            self.add_logger(name, paths.log_writer_path(name))
+            for name in ['train', 'test']:
+                self.add_logger(name, paths.log_writer_path(name))
 
     @property
     def network_names(self):
@@ -79,23 +85,61 @@ class BaseModel():
         :param iter_no: additional iteration_no to be added in the end of the name, if required. Default: NO_ITERATION
         :return:
         """
-        weights_path = paths.get_saved_params_path(dir_name, param_group, tag, iter_no=None)
+        weights_path = paths.get_saved_params_path(dir_name, self.model_name, param_group, tag, iter_no=None)
+        logger.info('Saving weights at %s: iter_no: %d' % (weights_path, iter_no))
         self.param_savers[param_group].save(self.session, weights_path, global_step=iter_no)
+
+    def load_params_from_model(self, parent_model):
+        parent_model_param_values = parent_model.get_all_param_values()
+        all_new_variable_names = map(lambda v: v.name[:-2], tf.trainable_variables(self.model_name))
+
+        with tf.variable_scope("", reuse=True):
+            for parent_var_name in parent_model_param_values:
+                new_variable_name = parent_var_name.replace(parent_model.model_name, self.model_name)
+                if new_variable_name not in all_new_variable_names:
+                    print 'Oops!, {} not in var list'.format(new_variable_name)
+                var_value = parent_model_param_values[parent_var_name]
+                new_variable = tf.get_variable(new_variable_name)
+                new_variable.load(var_value, self.session)
+
+    def load_params_from_history(self, dir_name='all', param_group='all', tag='iter', iter_no=None):
+        param_saver = self.get_param_saver(param_group)
+        weights_path = paths.get_saved_params_path(dir_name, self.model_name, param_group, tag, iter_no)
+        if iter_no is None:
+            checkpoint_dir = os.path.dirname(weights_path)
+            weights_path = tf.train.latest_checkpoint(checkpoint_dir)
+            iter_no = int(weights_path.split('-')[-1])
+        param_saver.restore(self.session, weights_path)
+        return iter_no
 
     def load_params(self, dir_name='all', param_group='all', tag='iter', iter_no=None):
         """
         Will load the latest params, if iter_no is None.
         """
-        param_saver = self.get_param_saver(param_group)
-        weights_path = paths.get_saved_params_path(dir_name, param_group, tag, iter_no)
+        weights_path = paths.get_saved_params_path(dir_name, self.model_name, param_group, tag, iter_no)
         if iter_no is None:
             checkpoint_dir = os.path.dirname(weights_path)
-            full_checkpoint_path = tf.train.latest_checkpoint(checkpoint_dir)
-            iter_no = int(full_checkpoint_path.split('-')[-1])
-            param_saver.restore(self.session, full_checkpoint_path)
+            weights_path = tf.train.latest_checkpoint(checkpoint_dir)
+            iter_no = int(weights_path.split('-')[-1])
 
-        else:
-            param_saver.restore(self.session, weights_path)
+        old_variable_names = tf_framework.list_variables(weights_path)
+        all_new_variable_names = map(lambda v: v.name, tf.global_variables(self.model_name))
+        print('All Variable names:\n')
+        # for var_name in all_new_variable_names:
+        #     print var_name
+        with tf.variable_scope("", reuse=True):
+            for old_var_name, _ in old_variable_names:
+                old_model_scope = old_var_name.split('/')[0]
+                new_variable_name = old_var_name.replace(old_model_scope, self.model_name)
+                if new_variable_name + ':0' not in all_new_variable_names:
+                    print 'Oops!, {} not in var list'.format(new_variable_name)
+                print(new_variable_name)
+                if 'RMSProp' in new_variable_name:
+                    print 'ignoreing...'
+                    continue
+                var_value = tf_framework.load_variable(weights_path, old_var_name)
+                new_variable = tf.get_variable(new_variable_name)
+                new_variable.load(var_value, self.session)
         return iter_no
 
     def log_custom_summary(self, logger_name, tag, simple_value, iter_no):
@@ -103,3 +147,19 @@ class BaseModel():
             tf.Summary.Value(tag=tag, simple_value=simple_value),
         ])
         self.loggers[logger_name].add_summary(summary, global_step=iter_no)
+
+    def get_all_param_values(self):
+        param_values = {}
+        params = tf.trainable_variables(self.model_name)
+        values = self.session.run(params)
+        for param, value in zip(params, values):
+            param_values[param.name[:-2]] = value
+        return param_values
+
+    @abstractmethod
+    def encode(self, x):
+        return NotImplemented
+
+    @abstractmethod
+    def decode(self, z):
+        return NotImplemented

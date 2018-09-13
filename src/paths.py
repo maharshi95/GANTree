@@ -43,9 +43,9 @@ def get_temp_file_path(path):
     return osp.join(temp_dir, path)
 
 
-def get_saved_params_path(dir_name, net_name, weight_label, iter_no):
+def get_saved_params_path(dir_name, model_name, net_name, weight_label, iter_no):
     dir_path = weights_dir_paths[dir_name]
     if iter_no is None:
-        return osp.join(dir_path, '%s_%s' % (net_name, weight_label))
+        return osp.join(dir_path, model_name, '%s_%s' % (net_name, weight_label))
     else:
-        return osp.join(dir_path, '%s_%s-%d' % (net_name, weight_label, iter_no))
+        return osp.join(dir_path, model_name, '%s_%s-%d' % (net_name, weight_label, iter_no))
