@@ -1,3 +1,5 @@
+from collections import deque
+
 import numpy as np
 import tensorflow as tf
 from sklearn import mixture
@@ -42,17 +44,32 @@ class GNode(object):
     def sample(self, n_samples=1):
         return np.random.multivariate_normal(self.means, self.cov, n_samples)
 
-    def predict(self, X):
-        Y = self.gmm.predict(X)
+    def predict_z(self, Z):
+        if Z.shape[0] == 0:
+            return np.array([])
+        Y = self.gmm.predict(Z)
         Y = np.array([self.child[y].node_id for y in Y])
         return Y
 
-    def split(self, X):
-        Y = self.predict(X)
+    def predict_x(self, X):
+        if X.shape[0] == 0:
+            return np.array([])
+        Z = self.model.encode(X)
+        Y = self.predict_z(Z)
+        return Y
+
+    def split_z(self, Z):
+        Y = self.predict_z(Z)
         labels = [cid for cid in self.child_ids]
-        x_splits = np.array([X[np.where(Y == cid)] for cid in self.child_ids])
-        i_splits = np.array([np.arange(X.shape[0])[np.where(Y == cid)] for cid in self.child_ids])
-        return labels, x_splits, i_splits
+        z_splits = {l: Z[np.where(Y == l)] for l in labels}
+        i_splits = {l: np.arange(Z.shape[0])[np.where(Y == l)] for l in labels}
+        return z_splits, i_splits
+
+    def split_x(self, X):
+        Z = self.model.encode(X)
+        z_splits, i_splits = self.split_z(Z)
+        x_splits = {l: X[i_split] for l, i_split in i_splits.items()}
+        return x_splits, i_splits
 
 
 class GANSet(object):
@@ -94,7 +111,31 @@ class GANSet(object):
         z_batch = np.array([self[gan_id].sample()[0] for gan_id in gan_ids])
         return z_batch
 
-    def predict(self, X):
+    def predict_z(self, Z):
+        n_samples = Z.shape[0]
+
+        labels = np.zeros(n_samples)
+
+        Z_splits = {0: Z}
+        I_splits = {0: np.arange(n_samples)}
+
+        fringe_set = deque([self.root])
+        while fringe_set:
+            gnode = fringe_set.popleft()
+            z_splits, i_splits = gnode.split_z(Z_splits[gnode.node_id])
+            Z_splits.update(z_splits)
+            I_splits.update(i_splits)
+            for child in gnode.child:
+                if child not in self.gans:
+                    fringe_set.append(child)
+        for gnode in self.gans:
+            cluster_id = gnode.node_id
+            indices = I_splits[cluster_id]
+            labels[indices] = cluster_id
+
+        return labels, Z_splits
+
+    def predict_x(self, X):
         n_samples = X.shape[0]
 
         labels = np.zeros(n_samples)
@@ -102,17 +143,15 @@ class GANSet(object):
         X_splits = {0: X}
         I_splits = {0: np.arange(n_samples)}
 
-        fringe_set = {self.root}
+        fringe_set = deque([self.root])
         while fringe_set:
-            for gnode in fringe_set:
-                fringe_set.remove(gnode)
-                l, x_splits, i_splits = gnode.split(X_splits[gnode.node_id])
-                for i in range(len(x_splits)):
-                    X_splits[l[i]] = x_splits[i]
-                    I_splits[l[i]] = i_splits[i]
-                for child in gnode.child:
-                    if child not in self.gans:
-                        fringe_set.add(child)
+            gnode = fringe_set.popleft()
+            x_splits, i_splits = gnode.split_x(X_splits[gnode.node_id])
+            X_splits.update(x_splits)
+            I_splits.update(i_splits)
+            for child in gnode.child:
+                if child not in self.gans:
+                    fringe_set.append(child)
         for gnode in self.gans:
             cluster_id = gnode.node_id
             indices = I_splits[cluster_id]
@@ -167,9 +206,14 @@ class GanTree(object):
             model.load_params_from_model(parent.model)
             parent.child.append(new_node)
 
-    def split(self, parent):
-        assert isinstance(parent, GNode)
-        assert parent.node_id not in self.split_history
+    def split_node(self, parent):
+        assert isinstance(parent, GNode) or (isinstance(parent, int) and parent < len(self.nodes))
+        if isinstance(parent, GNode):
+            assert parent.node_id not in self.split_history
+        else:
+            assert parent not in self.split_history
+            parent = self.nodes[parent]
+
         gmm = mixture.GaussianMixture(n_components=self.n_child, covariance_type='full', max_iter=1000)
         parent.gmm = gmm
 
