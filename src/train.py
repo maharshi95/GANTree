@@ -5,6 +5,12 @@ import numpy as np
 from matplotlib import pyplot as plt
 from exp_context import ExperimentContext
 
+import paths
+from utils import viz_utils
+from utils import bash_utils, model_utils
+from dataloader import DataLoader
+
+
 # Setting up Argument parser
 
 parser = argparse.ArgumentParser()
@@ -28,10 +34,6 @@ logger = logging.getLogger(__name__)
 LOG_FORMAT = "[{}: %(filename)s: %(lineno)3s] %(levelname)s: %(funcName)s(): %(message)s".format(ExperimentContext.exp_name)
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
-import paths
-from utils import viz_utils
-from utils import bash_utils, model_utils
-from dataloader import DataLoader
 
 gpu_idx = str(args.gpu)
 
