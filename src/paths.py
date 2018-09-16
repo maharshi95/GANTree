@@ -7,9 +7,11 @@ exp_name = ExperimentContext.exp_name
 
 # data_base_dir = '../data'
 data_base_dir = '../../datasets'
-logs_base_dir = osp.join('../experiments', exp_name, 'logs')
-weights_base_dir = osp.join('../experiments', exp_name, 'weights')
-results_base_dir = osp.join('../experiments', exp_name, 'results')
+experiments_base_dir = '../experiments'
+logs_base_dir = osp.join(experiments_base_dir, exp_name, 'logs')
+weights_base_dir = osp.join(experiments_base_dir, exp_name, 'weights')
+results_base_dir = osp.join(experiments_base_dir, exp_name, 'results')
+exp_hyperparams_file = osp.join(experiments_base_dir, exp_name, 'hyperparams.json')
 
 temp_dir = osp.join(results_base_dir, '.temp')
 

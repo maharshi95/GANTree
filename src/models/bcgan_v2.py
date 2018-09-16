@@ -3,6 +3,7 @@ import logging
 import numpy as np
 import tensorflow as tf
 
+from model_components import losses
 from model_components.toy import encoder, decoder, disc_v2
 from models.base import BaseModel
 from exp_context import ExperimentContext
@@ -80,21 +81,15 @@ class Model(BaseModel):
         real_labels = tf.ones([batch_size, 1])
         fake_labels = tf.zeros([batch_size, 1])
 
-        self.disc_batch_loss_real = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(labels=real_entropy_labels, logits=self.entropy_logits_real))
-        self.disc_batch_loss_fake = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(labels=fake_entropy_labels, logits=self.entropy_logits_fake))
+        self.disc_batch_loss_real = losses.sigmoid_cross_entropy_loss(real_entropy_labels, self.entropy_logits_real)
+        self.disc_batch_loss_fake = losses.sigmoid_cross_entropy_loss(fake_entropy_labels, self.entropy_logits_fake)
 
-        self.gen_batch_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(labels=real_entropy_labels, logits=self.entropy_logits_fake))
+        self.gen_batch_loss = losses.sigmoid_cross_entropy_loss(real_entropy_labels, self.entropy_logits_fake)
 
-        self.disc_sample_loss_real = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(labels=real_labels, logits=self.logits_real))
-        self.disc_sample_loss_fake = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(labels=fake_labels, logits=self.logits_fake))
+        self.disc_sample_loss_real = losses.sigmoid_cross_entropy_loss(real_labels, self.logits_real)
+        self.disc_sample_loss_fake = losses.sigmoid_cross_entropy_loss(fake_labels, self.logits_fake)
 
-        self.gen_sample_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(labels=real_labels, logits=self.logits_fake))
+        self.gen_sample_loss = losses.sigmoid_cross_entropy_loss(real_labels, self.logits_fake)
 
         self.disc_loss_real = (self.disc_batch_loss_real + self.disc_sample_loss_real) / 2.0
         self.disc_loss_fake = (self.disc_batch_loss_fake + self.disc_sample_loss_fake) / 2.0
@@ -108,8 +103,8 @@ class Model(BaseModel):
         self.disc_real_preds = tf.cast(self.logits_real >= 0., tf.int32)
         self.disc_fake_preds = tf.cast(self.logits_fake >= 0., tf.int32)
 
-        self.disc_real_acc = 100 * tf.reduce_mean(tf.cast(tf.equal(self.disc_real_preds, 0), H.dtype))
-        self.disc_fake_acc = 100 * tf.reduce_mean(tf.cast(tf.equal(self.disc_fake_preds, 1), H.dtype))
+        self.disc_real_acc = 100 * tf.reduce_mean(tf.cast(tf.equal(self.disc_real_preds, 1), H.dtype))
+        self.disc_fake_acc = 100 * tf.reduce_mean(tf.cast(tf.equal(self.disc_fake_preds, 0), H.dtype))
 
         self.disc_acc = 0.5 * (self.disc_real_acc + self.disc_fake_acc)
         self.gen_acc = 100 - self.disc_fake_acc
@@ -121,15 +116,30 @@ class Model(BaseModel):
 
     def _define_summaries(self):
         summaries_list = [
-            tf.summary.scalar('x_recon_loss', self.x_recon_loss),
-            tf.summary.scalar('z_recon_loss', self.z_recon_loss),
-            tf.summary.scalar('encoder_loss', self.encoder_loss),
+            tf.summary.scalar('recon_x_loss', self.x_recon_loss),
+            tf.summary.scalar('recon_z_loss', self.z_recon_loss),
+            tf.summary.scalar('recon_loss', self.encoder_loss),
+
             tf.summary.scalar('gen_loss', self.gen_loss),
+            tf.summary.scalar('gen_loss_batch', self.gen_batch_loss),
+            tf.summary.scalar('gen_loss_samples', self.gen_sample_loss),
+
             tf.summary.scalar('disc_loss', self.disc_loss),
+
+            tf.summary.scalar('disc_loss_sample_real', self.disc_sample_loss_real),
+            tf.summary.scalar('disc_loss_sample_fake', self.disc_sample_loss_fake),
+
+            tf.summary.scalar('disc_loss_batch_real', self.disc_batch_loss_real),
+            tf.summary.scalar('disc_loss_batch_fake', self.disc_batch_loss_fake),
+
+            tf.summary.scalar('disc_loss_real', self.disc_loss_real),
+            tf.summary.scalar('disc_loss_fake', self.disc_loss_fake),
+
             tf.summary.scalar('gen_acc', self.gen_acc),
+
             tf.summary.scalar('disc_acc', self.disc_acc),
-            tf.summary.scalar('disc_real_acc', self.disc_real_acc),
-            tf.summary.scalar('disc_fake_acc', self.disc_fake_acc),
+            tf.summary.scalar('disc_acc_real', self.disc_real_acc),
+            tf.summary.scalar('disc_acc_fake', self.disc_fake_acc),
 
             tf.summary.histogram('z_rand', self.z_rand),
             tf.summary.histogram('z_real', self.z_real),
@@ -230,7 +240,7 @@ class Model(BaseModel):
     def discriminate(self, x_batch, split=True):
         preds = self.session.run(self.disc_real_preds, {
             self.ph_X: x_batch
-        })
+        })[:, 0]
         if split:
             x_batch_real = x_batch[np.where(preds == 0)]
             x_batch_fake = x_batch[np.where(preds == 1)]

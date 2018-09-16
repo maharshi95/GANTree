@@ -1,4 +1,6 @@
 from __future__ import division, print_function, absolute_import
+
+import json
 import os, time, argparse, logging, traceback
 
 import numpy as np
@@ -56,8 +58,12 @@ model_utils.setup_dirs()
 
 Model = ExperimentContext.get_model_class()
 H = ExperimentContext.get_hyperparams()
-print('input_size:', H.input_size, 'latent_size:', H.z_size)
 dl = DataLoaderFactory.get_dataloader(H.dataloader, H.input_size, H.z_size)
+
+hyperparams_string_content = json.dumps(H.__dict__, default=lambda x: repr(x), indent=4, sort_keys=True)
+print(hyperparams_string_content)
+with open(paths.exp_hyperparams_file, "w") as fp:
+    fp.write(hyperparams_string_content)
 
 model = Model('growing-gans')
 model.build()
@@ -119,7 +125,8 @@ while iter_no < max_epochs:
     train_inputs = x_train, z_train
     test_inputs = x_test, z_test
 
-    model.step_train_autoencoder(train_inputs)
+    if H.train_autoencoder:
+        model.step_train_autoencoder(train_inputs)
 
     if (iter_no % n_step_generator) == 0:
         if H.train_generator_adv:

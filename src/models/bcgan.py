@@ -3,7 +3,8 @@ import logging
 import numpy as np
 import tensorflow as tf
 
-from model_components import encoder, decoder, disc
+from model_components.toy import encoder, decoder, disc
+from model_components import losses
 from models.base import BaseModel
 from exp_context import ExperimentContext
 
@@ -76,13 +77,10 @@ class Model(BaseModel):
         real_labels = tf.ones([batch_size, 1])
         fake_labels = tf.zeros([batch_size, 1])
 
-        self.disc_loss_real = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(real_labels, self.logits_real))
-        self.disc_loss_fake = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(fake_labels, self.logits_fake))
+        self.disc_loss_real = losses.sigmoid_cross_entropy_loss(real_labels, self.logits_real)
+        self.disc_loss_fake = losses.sigmoid_cross_entropy_loss(fake_labels, self.logits_fake)
 
-        self.gen_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(real_labels, self.logits_fake))
+        self.gen_loss = losses.sigmoid_cross_entropy_loss(real_labels, self.logits_fake)
 
         self.encoder_loss = self.x_recon_loss + self.z_recon_loss
         self.decoder_loss = self.encoder_loss + 0 * self.gen_loss
@@ -92,8 +90,8 @@ class Model(BaseModel):
         self.disc_real_preds = tf.cast(self.logits_real >= 0., tf.int32)
         self.disc_fake_preds = tf.cast(self.logits_fake >= 0., tf.int32)
 
-        self.disc_real_acc = 100 * tf.reduce_mean(tf.cast(tf.equal(self.disc_real_preds, 0), H.dtype))
-        self.disc_fake_acc = 100 * tf.reduce_mean(tf.cast(tf.equal(self.disc_fake_preds, 1), H.dtype))
+        self.disc_real_acc = 100 * tf.reduce_mean(tf.cast(tf.equal(self.disc_real_preds, 1), H.dtype))
+        self.disc_fake_acc = 100 * tf.reduce_mean(tf.cast(tf.equal(self.disc_fake_preds, 0), H.dtype))
 
         self.disc_acc = 0.5 * (self.disc_real_acc + self.disc_fake_acc)
         self.gen_acc = 100 - self.disc_fake_acc
@@ -119,8 +117,8 @@ class Model(BaseModel):
             tf.summary.histogram('z_real', self.z_real),
             tf.summary.histogram('z_recon', self.z_recon),
 
-            tf.summary.histogram('fake_preds', self.disc_real_preds),
-            tf.summary.histogram('real_preds', self.disc_fake_preds),
+            # tf.summary.histogram('fake_preds', self.disc_real_preds),
+            # tf.summary.histogram('real_preds', self.disc_fake_preds),
         ]
 
         self.summaries = tf.summary.merge(summaries_list)
@@ -214,7 +212,7 @@ class Model(BaseModel):
     def discriminate(self, x_batch, split=True):
         preds = self.session.run(self.disc_real_preds, {
             self.ph_X: x_batch
-        })
+        })[:, 0]
         if split:
             x_batch_real = x_batch[np.where(preds == 0)]
             x_batch_fake = x_batch[np.where(preds == 1)]

@@ -20,5 +20,5 @@ class Hyperparams(base.Hyperparams):
     train_generator_adv = True
     train_autoencoder = True
 
-    model = 'bcgan'
-    exp_name = 'bcgan_v1_1D_1D_two_gaussians_with_autoencoder'
+    model = 'bcgan_v2'
+    exp_name = 'bcgan_v2_1D_1D_two_gaussians_with_autoencoder'

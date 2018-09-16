@@ -9,13 +9,16 @@ class Hyperparams(base.Hyperparams):
 
     z_size = 2
 
-    lr_autoencoder = 0.0001
-    lr_decoder = 0.0001
-    lr_disc = 0.0001
+    lr_autoencoder = 0.0005
+    lr_decoder = 0.0005
+    lr_disc = 0.0005
 
     z_dist_type = 'normal'  # ['uniform', 'normal', 'sphere']
 
-    train_generator_adv = True
+    show_visual_while_training = True
 
-    model = 'bcgan_v2'
-    exp_name = 'bcgan_0'
+    train_generator_adv = True
+    train_autoencoder = True
+
+    model = 'bcgan'
+    exp_name = 'bcgan_v1_2D_2D_two_gaussians_with_autoencoder'
