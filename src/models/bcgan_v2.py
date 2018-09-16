@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import tensorflow as tf
 
-from model_components import encoder, decoder, disc
+from model_components import encoder, decoder, disc_v2
 from models.base import BaseModel
 from exp_context import ExperimentContext
 
@@ -65,24 +65,40 @@ class Model(BaseModel):
             self.z_recon = encoder(self.x_fake)
 
             # Disc Iteration
-            self.logits_real = disc(self.x_real)
-            self.logits_fake = disc(self.x_fake)
+            self.logits_real, self.entropy_logits_real = disc_v2(self.x_real)
+            self.logits_fake, self.entropy_logits_fake = disc_v2(self.x_fake)
 
     def _define_losses(self):
         batch_size = tf.shape(self.ph_X)[0]
         self.x_recon_loss = tf.reduce_mean((self.x_real - self.x_recon) ** 2)
         self.z_recon_loss = tf.reduce_mean((self.z_rand - self.z_recon) ** 2)
         # [B, 2]
+        logit_batch_size = tf.shape(self.entropy_logits_real)[0]
+        real_entropy_labels = tf.ones([logit_batch_size, 1])
+        fake_entropy_labels = tf.zeros([logit_batch_size, 1])
+
         real_labels = tf.ones([batch_size, 1])
         fake_labels = tf.zeros([batch_size, 1])
 
-        self.disc_loss_real = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(real_labels, self.logits_real))
-        self.disc_loss_fake = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(fake_labels, self.logits_fake))
+        self.disc_batch_loss_real = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(labels=real_entropy_labels, logits=self.entropy_logits_real))
+        self.disc_batch_loss_fake = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(labels=fake_entropy_labels, logits=self.entropy_logits_fake))
 
-        self.gen_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(real_labels, self.logits_fake))
+        self.gen_batch_loss = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(labels=real_entropy_labels, logits=self.entropy_logits_fake))
+
+        self.disc_sample_loss_real = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(labels=real_labels, logits=self.logits_real))
+        self.disc_sample_loss_fake = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(labels=fake_labels, logits=self.logits_fake))
+
+        self.gen_sample_loss = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(labels=real_labels, logits=self.logits_fake))
+
+        self.disc_loss_real = (self.disc_batch_loss_real + self.disc_sample_loss_real) / 2.0
+        self.disc_loss_fake = (self.disc_batch_loss_fake + self.disc_sample_loss_fake) / 2.0
+        self.gen_loss = (self.gen_batch_loss + self.gen_sample_loss) / 2.0
 
         self.encoder_loss = self.x_recon_loss + self.z_recon_loss
         self.decoder_loss = self.encoder_loss + 0 * self.gen_loss
@@ -119,8 +135,8 @@ class Model(BaseModel):
             tf.summary.histogram('z_real', self.z_real),
             tf.summary.histogram('z_recon', self.z_recon),
 
-            tf.summary.histogram('fake_preds', self.disc_real_preds),
-            tf.summary.histogram('real_preds', self.disc_fake_preds),
+            # tf.summary.histogram('fake_preds', self.disc_real_preds),
+            # tf.summary.histogram('real_preds', self.disc_fake_preds),
         ]
 
         self.summaries = tf.summary.merge(summaries_list)
