@@ -13,6 +13,8 @@ class Hyperparams:
     lr_disc = 0.0001
 
     z_dist_type = 'normal'  # ['uniform', 'normal', 'sphere']
+    
+    show_visual_while_training = True
 
     train_generator_adv = True
 

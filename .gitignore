@@ -108,5 +108,6 @@ venv.bak/
 /logs/*
 /experiments/*
 /weights/*
+/data/*
 /.idea
 

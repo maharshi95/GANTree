@@ -1,14 +1,17 @@
 import tensorflow as tf
+from . import base
 
 
-class Hyperparams:  # change
+class Hyperparams(base.Hyperparams):  # change
     dtype = tf.float32
+    batch_size = 128
+    logit_batch_size = 64 # factor of batch_size
 
     input_size = 2
 
     input_height = 32
     input_width = 32
-    input_channel = 3
+    input_channel = 1
 
     z_size = 100
 
@@ -19,8 +22,10 @@ class Hyperparams:  # change
     beta2 = 0.99
 
     z_dist_type = 'normal'  # ['uniform', 'normal', 'sphere']
+    show_visual_while_training = False
 
-    train_generator_adv = False
+    train_generator_adv = True
 
-    model = 'bcgan'
-    exp_name = 'bcgan_0'
+    model = 'dcgan'
+    exp_name = 'dcgan_mnist_0'
+    dataloader = 'mnist'

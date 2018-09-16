@@ -150,7 +150,7 @@ while iter_no < max_epochs:
     if iter_no % n_step_iter_save == 0:
         model.save_params(iter_no=iter_no)
 
-    if iter_no % n_step_visualize == 0 or (iter_no < n_step_visualize and iter_no % 200 == 0):
+    if H.show_visual_while_training and (iter_no % n_step_visualize == 0 or (iter_no < n_step_visualize and iter_no % 200 == 0)):
         def get_x_plots_data(x_input):
             _, x_real_true, x_real_false = model.discriminate(x_input)
 

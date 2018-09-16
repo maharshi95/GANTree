@@ -10,7 +10,7 @@ import glob
 
 
 class Dataset:
-    def __init__(self, dataset_name="svhn", data_dir='./data/', shuffle=False):
+    def __init__(self, dataset_name="svhn", data_dir='../data/', shuffle=False):
         self.dataset_name = dataset_name
         if not isdir(data_dir):
             os.makedirs(data_dir)

@@ -1,5 +1,8 @@
 import tensorflow as tf
 from tensorflow.contrib import layers
+from exp_context import ExperimentContext
+
+H = ExperimentContext.Hyperparams
 
 
 def n_layers_fc(inputs, n_units, activations=None, name='n_layers_fully_connected'):
@@ -33,24 +36,24 @@ def dense(x, out_units):
     return layers.fully_connected(x, out_units, activation_fn=None)
 
 
-def conv2d(x, filters):
+def conv2d(x, filters, name):
     kernel_initializer = tf.random_normal_initializer(mean=0.0, stddev=0.02)
     return tf.layers.conv2d(x, filters, kernel_size=5, strides=2, padding="same", activation=None,
-                            kernel_initializer=kernel_initializer)
+                            kernel_initializer=kernel_initializer, name=name)
 
 
 def encoder(x, alpha=0.2, training=True):  # change
     with tf.variable_scope('encoder', reuse=tf.AUTO_REUSE):
         # Input layer is 64x64x3
-        conv1 = conv2d(x, 64)
+        conv1 = conv2d(x, 64,name = 'conv1')
         conv1 = tf.nn.leaky_relu(conv1, alpha)
         print conv1.shape
 
-        conv2 = conv2d(conv1, 128)
+        conv2 = conv2d(conv1, 128,name = 'conv2')
         conv2 = batch_norm(conv2, training=training)
         conv2 = tf.nn.leaky_relu(conv2, alpha)
         print conv2.shape
-        conv3 = conv2d(conv2, 256)
+        conv3 = conv2d(conv2, 256,name = 'conv3')
         conv3 = batch_norm(conv3, training=training)
         conv3 = tf.nn.leaky_relu(conv3, alpha)
         print conv3.shape
@@ -59,10 +62,11 @@ def encoder(x, alpha=0.2, training=True):  # change
         z_reconstruct = dense(flat, 100)
         print flat.shape
         logits = dense(flat, 1)
-
+        logits_reshape = tf.reshape(logits, [-1, H.logit_batch_size])
+        entropy_logits = dense(logits_reshape, 1)
         out = tf.sigmoid(logits)
 
-        return out, logits, z_reconstruct
+        return out, logits, entropy_logits, z_reconstruct
 
 
 def decoder(z, output_dim=1, training=True):  # change
@@ -88,9 +92,10 @@ def decoder(z, output_dim=1, training=True):  # change
 
         t_conv3 = transpose_conv2d(t_conv2, output_dim)
         # 32x32
-        print t_conv3.shape
+        print t_conv3
 
         gen_out = t_conv3
+        print gen_out
 
         out = tf.tanh(gen_out)
         return out  # 32x32x1

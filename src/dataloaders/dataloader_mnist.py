@@ -9,7 +9,7 @@ class MNISTDataLoader(object):
         self.dataset = Dataset('mnist', shuffle=True)
         self.num_samples = 128
 
-    def mnist(self,  train_ratio=0.8):
+    def get_data(self,  train_ratio=0.8):
         new_data = self.dataset.next_batch(batch_size = self.num_samples)
         n_train = int(train_ratio * new_data.shape[0])
         training, test = new_data[:n_train, :], new_data[n_train:, :]

@@ -90,7 +90,7 @@ class Model(BaseModel):
 
     def _define_metrics(self):
         self.disc_real_preds = tf.cast(self.logits_real >= 0., tf.int32)
-        self.disc_fake_preds = tf.cast(self.logits_real < 0., tf.int32)
+        self.disc_fake_preds = tf.cast(self.logits_fake >= 0., tf.int32)
 
         self.disc_real_acc = 100 * tf.reduce_mean(tf.cast(tf.equal(self.disc_real_preds, 0), H.dtype))
         self.disc_fake_acc = 100 * tf.reduce_mean(tf.cast(tf.equal(self.disc_fake_preds, 1), H.dtype))
