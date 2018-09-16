@@ -35,6 +35,7 @@ import paths
 from utils import viz_utils
 from utils import bash_utils, model_utils
 from dataloaders.factory import DataLoaderFactory
+from gan_tree import gan_tree
 
 gpu_idx = str(args.gpu)
 
@@ -59,10 +60,10 @@ H = ExperimentContext.get_hyperparams()
 print('input_size:', H.input_size, 'latent_size:', H.z_size)
 dl = DataLoaderFactory.get_dataloader(H.dataloader, H.input_size, H.z_size)
 
-model = Model('growing-gans')
-model.build()
-model.initiate_service()
+x_train, x_test = dl.get_data()
+print('Train Test Data loaded...')
 
+gtree = gan_tree.GanTree('gan-tree', Model, x_test)
 print('Model service initiated...')
 
 if resume_flag is not False:
@@ -88,17 +89,14 @@ if 'all' in args.delete or 'weights' in args.delete:
     model_utils.setup_dirs()
     print('')
 
-x_train, x_test = dl.get_data()
-print('Train Test Data loaded...')
-
-max_epochs = 100000
+max_epochs = 10000
 
 n_step_console_log = 500
 n_step_tboard_log = 10
 n_step_validation = 50
 n_step_iter_save = 5000
 n_step_visualize = 1000
-n_step_generator = 10
+n_step_generator = 5
 n_step_generator_decay = 1000
 
 en_loss_history = []

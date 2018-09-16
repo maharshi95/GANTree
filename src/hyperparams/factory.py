@@ -1,18 +1,19 @@
-from enum import Enum
-
+import importlib
 from . import base
-from . import base_dc1
 
 
-class HyperparamsFactory:  # change
-    __dict = {
-        'bcgan': base.Hyperparams(),
-        'dcgan': base_dc1.Hyperparams()
-    }
+
+class HyperparamsFactory:
 
     class_type = base.Hyperparams
 
     @classmethod
     def get_hyperparams(cls, name):
-        # type: (str) -> base.Hyperparams
-        return cls.__dict[name]
+        # type: (str) -> bcgan_2d.Hyperparams
+        # return cls.__dict[name]
+
+        module_name = __package__ + '.' + name
+        print('importing hyperparams %s' % module_name)
+        module = importlib.import_module(module_name)
+        Hyperparams = module.Hyperparams
+        return Hyperparams

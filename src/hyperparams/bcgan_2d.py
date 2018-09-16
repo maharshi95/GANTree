@@ -1,12 +1,13 @@
 import tensorflow as tf
+from . import base
 
 
-class Hyperparams:
+class Hyperparams(base.Hyperparams):
     dtype = tf.float32
 
-    input_size = 1
+    input_size = 2
 
-    z_size = 1
+    z_size = 2
 
     lr_autoencoder = 0.0001
     lr_decoder = 0.0001
@@ -16,6 +17,5 @@ class Hyperparams:
 
     train_generator_adv = True
 
-    model = 'bcgan'
+    model = 'bcgan_v2'
     exp_name = 'bcgan_0'
-    dataloader = 'two_gaussian'

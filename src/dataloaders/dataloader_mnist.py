@@ -1,13 +1,13 @@
 import numpy as np
+
+from dataloaders.base import BaseDataLoader
 from utils import np_utils
 from dataset_loader import Dataset
 
-class DataLoader(object):
+class MNISTDataLoader(object):
     def __init__(self):
         self.dataset = Dataset('mnist', shuffle=True)
         self.num_samples = 128
-
-
 
     def mnist(self,  train_ratio=0.8):
         new_data = self.dataset.next_batch(batch_size = self.num_samples)
