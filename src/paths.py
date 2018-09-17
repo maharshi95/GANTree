@@ -8,6 +8,8 @@ exp_name = ExperimentContext.exp_name
 # data_base_dir = '../data'
 data_base_dir = '../../datasets'
 experiments_base_dir = '../experiments'
+current_exp_dir = osp.join(experiments_base_dir, exp_name)
+
 logs_base_dir = osp.join(experiments_base_dir, exp_name, 'logs')
 weights_base_dir = osp.join(experiments_base_dir, exp_name, 'weights')
 results_base_dir = osp.join(experiments_base_dir, exp_name, 'results')

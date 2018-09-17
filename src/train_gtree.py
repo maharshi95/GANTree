@@ -1,4 +1,6 @@
 from __future__ import division, print_function, absolute_import
+
+import json
 import os, time, argparse, logging, traceback
 
 import numpy as np
@@ -60,6 +62,11 @@ H = ExperimentContext.get_hyperparams()
 print('input_size:', H.input_size, 'latent_size:', H.z_size)
 dl = DataLoaderFactory.get_dataloader(H.dataloader, H.input_size, H.z_size)
 
+hyperparams_string_content = json.dumps(H.__dict__, default=lambda x: repr(x), indent=4, sort_keys=True)
+print(hyperparams_string_content)
+with open(paths.exp_hyperparams_file, "w") as fp:
+    fp.write(hyperparams_string_content)
+
 x_train, x_test = dl.get_data()
 print('Train Test Data loaded...')
 
@@ -106,6 +113,8 @@ d_acc_history = []
 g_acc_history = []
 gen_loss_history = []
 
+for i_modes in range(1, H.n_modes + 1):
+
 while iter_no < max_epochs:
     iter_no += 1
 
@@ -117,9 +126,10 @@ while iter_no < max_epochs:
     train_inputs = x_train, z_train
     test_inputs = x_test, z_test
 
-    model.step_train_autoencoder(train_inputs)
+    if H.train_autoencoder:
+        model.step_train_autoencoder(train_inputs)
 
-    if (iter_no % n_step_generator) == 0:
+    if (iter_no % 40) < 10:
         if H.train_generator_adv:
             model.step_train_adv_generator(train_inputs)
     else:
@@ -148,7 +158,7 @@ while iter_no < max_epochs:
     if iter_no % n_step_iter_save == 0:
         model.save_params(iter_no=iter_no)
 
-    if iter_no % n_step_visualize == 0 or (iter_no < n_step_visualize and iter_no % 200 == 0):
+    if H.show_visual_while_training and (iter_no % n_step_visualize == 0 or (iter_no < n_step_visualize and iter_no % 200 == 0)):
         def get_x_plots_data(x_input):
             _, x_real_true, x_real_false = model.discriminate(x_input)
 

@@ -17,8 +17,11 @@ class Hyperparams(base.Hyperparams):
 
     show_visual_while_training = True
 
-    train_generator_adv = True
-    train_autoencoder = False
+    train_generator_adv = False
+    train_autoencoder = True
 
-    model = 'bcgan'
+    train_batch_logits = False
+    train_sample_logits = True
+
+    model = 'bcgan_v2'
     exp_name = 'bcgan_v1_2D_2D_two_gaussians_no_autoencoder'

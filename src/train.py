@@ -99,7 +99,7 @@ n_step_validation = 50
 n_step_iter_save = 5000
 n_step_visualize = 1000
 n_step_generator = 10
-n_step_generator_decay = 1000
+n_step_generator_decay = 0
 
 en_loss_history = []
 de_loss_history = []
@@ -127,7 +127,7 @@ while iter_no < max_epochs:
     else:
         model.step_train_discriminator(train_inputs)
 
-    if (iter_no % n_step_generator_decay) == 0:
+    if (n_step_generator_decay > 0 and iter_no % n_step_generator_decay) == 0:
         n_step_generator = max(n_step_generator - 1, 1)
 
     train_losses = model.compute_losses(train_inputs, model.network_loss_variables)
