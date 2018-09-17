@@ -44,6 +44,16 @@ class BaseModel():
 
         init = tf.variables_initializer(tf.global_variables(self.model_name))
         self.session.run(init)
+        local_params = tf.local_variables(self.model_name)
+        local = tf.variables_initializer(local_params)
+        self.session.run(local)
+        uninit_var = tf.report_uninitialized_variables()
+        uninit_var = self.session.run(uninit_var)
+
+        if len(uninit_var) > 0:
+            print 'uninit var: '
+            for i in uninit_var:
+                print i
 
         for name in ['train', 'test']:
             self.add_logger(name, paths.log_writer_path(name))

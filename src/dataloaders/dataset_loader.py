@@ -19,6 +19,20 @@ class Dataset:
         self.length = self.dataset.shape[0]
         self.shuffle = shuffle
 
+    def create_numpy_data(self):
+        dataset = self.dataset
+        idx = np.arange(len(dataset))
+        np.random.shuffle(idx)
+        np.random.shuffle(idx)
+        np.random.shuffle(idx)
+        dataset = dataset[idx]
+
+        train = dataset[0:55000]
+        test = dataset[55001:]
+        np.save('../data/train', train)
+        np.save('../data/test', test)
+
+
     def _load_dataset(self):
         """
         Download and return the dataset

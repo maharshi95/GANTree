@@ -4,8 +4,9 @@ from . import base
 
 class Hyperparams(base.Hyperparams):  # change
     dtype = tf.float32
-    batch_size = 128
-    logit_batch_size = 64 # factor of batch_size
+    batch_size_train = 128
+    batch_size_test = 64
+    logit_batch_size = 32 # factor of batch_size
 
     input_size = 2
 
@@ -18,7 +19,7 @@ class Hyperparams(base.Hyperparams):  # change
     lr_autoencoder = 0.0001
     lr_decoder = 0.0001
     lr_disc = 0.0001
-    beta1 = 0.9
+    beta1 = 0.6
     beta2 = 0.99
 
     z_dist_type = 'normal'  # ['uniform', 'normal', 'sphere']

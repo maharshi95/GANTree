@@ -32,7 +32,7 @@ class Model(BaseModel):
         logger.info('%s: Model Definition complete' % repr(self))
 
         logger.info('%s: Model Params:' % repr(self))
-        for param in tf.trainable_variables(self.model_scope):
+        for param in tf.trainable_variables():
             logger.info(param)
 
         self.__is_model_built = True
@@ -72,6 +72,11 @@ class Model(BaseModel):
         smooth = 0.95
         batch_size = tf.shape(self.ph_X)[0]
         self.x_recon_loss = tf.reduce_mean((self.x_real - self.x_recon) ** 2)
+        print('x_real', self.x_real.shape)
+        print('x_fake', self.x_recon.shape)
+        print('z_real', self.z_rand.shape)
+        print('z_fake', self.z_recon.shape)
+
         self.z_recon_loss = tf.reduce_mean((self.z_rand - self.z_recon) ** 2)
         # [B, 2]
         logit_batch_size = tf.shape(self.entropy_logits_real)[0]
@@ -109,8 +114,8 @@ class Model(BaseModel):
         self.disc_real_preds = tf.cast(self.logits_real >= 0., tf.int32)
         self.disc_fake_preds = tf.cast(self.logits_fake >= 0., tf.int32)
 
-        self.disc_real_acc = 100 * tf.reduce_mean(tf.cast(tf.equal(self.disc_real_preds, 0), H.dtype))
-        self.disc_fake_acc = 100 * tf.reduce_mean(tf.cast(tf.equal(self.disc_fake_preds, 1), H.dtype))
+        self.disc_real_acc = 100 * tf.reduce_mean(tf.cast(tf.equal(self.disc_real_preds, 1), H.dtype))
+        self.disc_fake_acc = 100 * tf.reduce_mean(tf.cast(tf.equal(self.disc_fake_preds, 0), H.dtype))
 
         self.disc_acc = 0.5 * (self.disc_real_acc + self.disc_fake_acc)
         self.gen_acc = 100 - self.disc_fake_acc
@@ -150,16 +155,16 @@ class Model(BaseModel):
         self.add_param_group('all', tf.global_variables(self.model_scope))
 
     def _define_operations(self):
-        with tf.variable_scope('', reuse=tf.AUTO_REUSE):
-            autoencoder_trainable_params = tf.trainable_variables(self.encoder_scope) + tf.trainable_variables(self.decoder_scope)
+        with tf.variable_scope(self.model_scope, reuse=tf.AUTO_REUSE):
+            autoencoder_trainable_params = tf.global_variables(self.encoder_scope) + tf.global_variables(self.decoder_scope)
             opt = tf.train.AdamOptimizer(H.lr_autoencoder, beta1=H.beta1, beta2=H.beta2)
             self.autoencoder_train_op = opt.minimize(self.encoder_loss, var_list=autoencoder_trainable_params)
 
-            decoder_params = tf.trainable_variables(self.decoder_scope)
+            decoder_params = tf.global_variables(self.decoder_scope)
             opt = tf.train.AdamOptimizer(H.lr_autoencoder, beta1=H.beta1, beta2=H.beta2)
             self.adv_gen_train_op = opt.minimize(self.gen_loss, var_list=decoder_params)
 
-            disc_params = tf.trainable_variables(self.disc_scope)
+            disc_params = tf.global_variables(self.disc_scope)
             opt = tf.train.AdamOptimizer(H.lr_autoencoder, beta1=H.beta1, beta2=H.beta2)
             self.adv_disc_train_op = opt.minimize(self.disc_loss, var_list=disc_params)
 
