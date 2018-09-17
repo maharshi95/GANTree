@@ -9,8 +9,28 @@ H = ExperimentContext.get_hyperparams()
 
 
 class MNISTDataLoader(object):
-    # def __init__(self):
-    # self.dataset = Dataset('mnist', shuffle=True)
+    def __init__(self, batch_size_train=32, batch_size_test=32,):
+        self.data = {
+            'train': np.load('./data/train.npy'),
+            'test': np.load('./data/test.npy')
+        }
+        self.batch_size = {
+            'train': batch_size_train,
+            'test': batch_size_test
+        }
+        self.current_batch = {
+            'train': 0,
+            'test': 0
+        }
+        print self.batch_size
+
+        self.n_batches = {
+            'train': (len(self.data['train']) // self.batch_size['train']),
+            'test': (len(self.data['test']) // self.batch_size['test'])
+        }
+
+    def shuffle(self, dataset):
+        np.random.shuffle(dataset)
 
     def _scale(self, x, feature_range=(-1, 1)):
         """
@@ -21,34 +41,28 @@ class MNISTDataLoader(object):
         x = x * (max - min) + min
         return x
 
-    def next_batch(self, training=True):
+    def next_batch(self, split):
         """
         Return the next batch for the training loop
         """
-        if training:
-            # print("Dataset shuffled successfully.")
-            training_data = np.load('./data/train.npy')
-            len_train_set = len(training_data)
-            idx = np.arange(len_train_set)
-            np.random.shuffle(idx)
-            training_data = training_data[idx]
-            ii = np.random.randint(0, len_train_set - H.batch_size_train, size=1)[-1]
-            x = training_data[ii:ii + H.batch_size_train]
 
-        else:
-            testing_data = np.load('./data/test.npy')
-            len_test_set = len(testing_data)
-            ii = np.random.randint(0, len_test_set - H.batch_size_test, size=1)[-1]
-            x = testing_data[ii:ii + H.batch_size_test]
+        batch_idx = self.current_batch[split]
+        batch_size = self.batch_size[split]
 
-        return self._scale(x)
+        if batch_idx == 0 or split == 'train':
+            self.shuffle(self.data[split])
+
+        self.current_batch[split] = (self.current_batch[split] + 1) % self.n_batches[split]
+        start = batch_idx * batch_size
+        batch = self.data[split][start:start + batch_size]
+        return self._scale(batch)
 
     def get_data(self):
-        training = self.next_batch(training=True)
-        test = self.next_batch(training=False)
+        training = self.next_batch(split='train')
+        test = self.next_batch(split='test')
         return training, test
 
-    def get_z_dist(self, n_samples, dim=100, dist_type='normal'):
+    def get_z_dist(self, n_samples, dim=H.z_size, dist_type='normal'):
         if dist_type == 'uniform':
             return np.random.uniform(-1, 1, (n_samples, dim))
         if dist_type == 'normal':

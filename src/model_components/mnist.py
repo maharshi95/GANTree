@@ -61,7 +61,7 @@ def encoder(x, alpha=0.2, training=True):  # change
         # Flatten it
         flat = tf.reshape(conv3, (-1, 4 * 4 * 256))
         # print flat.shape
-        z_reconstruct = dense(flat, 100)
+        z_reconstruct = dense(flat, H.z_size)
         print 'z_recons  ', z_reconstruct.shape
         logits = dense(flat, 1)
         logits_reshape = tf.reshape(logits, [-1, H.logit_batch_size])

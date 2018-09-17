@@ -14,9 +14,15 @@ class DataLoaderFactory(object):
     }
 
     @classmethod
-    def get_dataloader(cls, name, input_size=1, latent_size=1):
-        # type: (str, int, int) -> BaseDataLoader
+    def get_toy_dataloader(cls, name, input_size=1, latent_size=1):
+        # type: (str, int, int) -> (BaseDataLoader | MNISTDataLoader)
         DL = cls.__dict[name]
         if name == 'mnist':
             return DL()
         return DL(input_size, latent_size)
+
+    @classmethod
+    def get_image_dataloader(cls, name, *args):
+        # type: (str, object) -> MNISTDataLoader
+        DL = cls.__dict[name]
+        return DL(*args)

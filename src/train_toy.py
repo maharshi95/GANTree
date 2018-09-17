@@ -117,6 +117,8 @@ gen_loss_history = []
 while iter_no < max_epochs:
     iter_no += 1
 
+
+
     iter_time_start = time.time()
 
     z_train = dl.get_z_dist(x_train.shape[0], dist_type=H.z_dist_type)

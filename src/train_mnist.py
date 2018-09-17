@@ -57,7 +57,7 @@ model_utils.setup_dirs()
 Model = ExperimentContext.get_model_class()
 H = ExperimentContext.get_hyperparams()
 print('input_size:', H.input_size, 'latent_size:', H.z_size)
-dl = DataLoaderFactory.get_dataloader(H.dataloader, H.input_size, H.z_size)
+dl = DataLoaderFactory.get_image_dataloader(H.dataloader, H.batch_size_train, H.batch_size_test)
 
 model = Model('growing-gans')
 model.build()
@@ -88,18 +88,17 @@ if 'all' in args.delete or 'weights' in args.delete:
     model_utils.setup_dirs()
     print('')
 
-
 print('Train Test Data loaded...')
 
-max_epochs = 100000
+max_epochs = 300000
 
-n_step_console_log = 50
+n_step_console_log = 20
 n_step_tboard_log = 10
 n_step_validation = 30
 n_step_iter_save = 5000
 n_step_visualize = 1000
-n_step_generator = 10
-n_step_generator_decay = 1000
+n_step_generator = 30
+# n_step_generator_decay = 1500
 
 en_loss_history = []
 de_loss_history = []
@@ -108,37 +107,34 @@ d_acc_history = []
 g_acc_history = []
 gen_loss_history = []
 
+z_constant = dl.get_z_dist(10, dim=32, dist_type=H.z_dist_type)
+
 while iter_no < max_epochs:
     iter_no += 1
-    # if iter_no==50:
-    x_train, x_test = dl.get_data()
-
-
 
     iter_time_start = time.time()
     # print('x_train',x_train.shape)
     # print('x_test',x_test.shape)
     x_train, x_test = dl.get_data()
-    z_train = dl.get_z_dist(x_train.shape[0], dist_type=H.z_dist_type)
-    z_test = dl.get_z_dist(x_test.shape[0], dist_type=H.z_dist_type)
+    z_train = dl.get_z_dist(x_train.shape[0], dim=32, dist_type=H.z_dist_type)
+    z_test = dl.get_z_dist(x_test.shape[0], dim=32, dist_type=H.z_dist_type)
 
-    # print('z_train',z_train.shape)
-    # print('z_test',z_test.shape)
+    # print('z_train', z_train.shape)
+    # print('z_test', z_test.shape)
 
     train_inputs = x_train, z_train
     test_inputs = x_test, z_test
 
-    # model.step_train_autoencoder(train_inputs)
+    model.step_train_autoencoder(train_inputs)
 
-    if (iter_no % n_step_generator) == 0:
+    if (iter_no % n_step_generator) < 10:
         if H.train_generator_adv:
             model.step_train_adv_generator(train_inputs)
-            model.step_train_autoencoder(train_inputs)
     else:
         model.step_train_discriminator(train_inputs)
 
-    if (iter_no % n_step_generator_decay) == 0:
-        n_step_generator = max(n_step_generator - 1, 1)
+    # if (iter_no % n_step_generator_decay) == 0:
+    #     n_step_generator = max(n_step_generator - 1, 1)
 
     train_losses = model.compute_losses(train_inputs, model.network_loss_variables)
     #

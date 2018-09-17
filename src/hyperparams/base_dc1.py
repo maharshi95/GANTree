@@ -14,7 +14,7 @@ class Hyperparams(base.Hyperparams):  # change
     input_width = 32
     input_channel = 1
 
-    z_size = 100
+    z_size = 32
 
     lr_autoencoder = 0.0001
     lr_decoder = 0.0001

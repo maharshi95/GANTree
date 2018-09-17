@@ -29,3 +29,6 @@ class Hyperparams:
     model = 'bcgan'
     exp_name = 'bcgan_0'
     dataloader = 'two_gaussian'
+
+
+

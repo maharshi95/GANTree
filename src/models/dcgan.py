@@ -50,19 +50,20 @@ class Model(BaseModel):
     def _define_placeholders(self):
         self.ph_X = tf.placeholder(tf.float32, [None, H.input_height, H.input_width, H.input_channel])
         self.ph_Z = tf.placeholder(tf.float32, [None, H.z_size])
-        self.ph_plot_img = tf.placeholder(tf.float32, [None, None, None, 4])
+        self.ph_plot_img = tf.placeholder(tf.float32, [None, None, None, 1])
 
     def _define_network_graph(self):
         with tf.variable_scope(self.model_scope, reuse=tf.AUTO_REUSE):
             # X - Z - X Iteration
             self.x_real = self.ph_X
-            self.out_real, self.logits_real, self.entropy_logits_real, self.z_real = encoder(self.x_real)  # ask
+            self.out_real, self.logits_real, self.entropy_logits_real, self.z_real = encoder(self.x_real)
             self.x_recon = decoder(self.z_real)
 
             # Z - X - Z Iteration
             self.z_rand = self.ph_Z
+            print('z_rand', self.z_rand)
             self.x_fake = decoder(self.z_rand)
-            self.out_fake, self.logits_fake, self.entropy_logits_fake, self.z_recon = encoder(self.x_fake)  # ask
+            self.out_fake, self.logits_fake, self.entropy_logits_fake, self.z_recon = encoder(self.x_fake)
 
             # Disc Iteration
             # self.out_real,self.logits_real,_ = disc(self.x_real)
@@ -137,6 +138,10 @@ class Model(BaseModel):
             tf.summary.scalar('disc_real_acc', self.disc_real_acc),
             tf.summary.scalar('disc_fake_acc', self.disc_fake_acc),
 
+            tf.summary.image('Generated_image_randn', self.x_fake),
+            tf.summary.image('Reconstructed_image', self.x_recon),
+            tf.summary.image('GT_recon_image', self.x_real),
+
             tf.summary.histogram('z_rand', self.z_rand),
             tf.summary.histogram('z_real', self.z_real),
             tf.summary.histogram('z_recon', self.z_recon),
@@ -201,6 +206,10 @@ class Model(BaseModel):
             self.ph_Z: z_input,
         })
 
+    def compute_x_fake(self, z):
+        x_fake_generated = self.session.run(self.x_fake, {self.ph_Z: z})
+        return x_fake_generated
+
     def compute_losses(self, inputs, losses):
         x_input, z_input = inputs
         network_outputs = self.session.run(losses, feed_dict={
@@ -245,7 +254,7 @@ class Model(BaseModel):
 
     def log_image(self, logger_name, image, iter_no):
         summary = self.session.run(self.img_summary, feed_dict={
-            self.ph_plot_img: image[None, :, :, :]
+            self.ph_plot_img: image
         })
         self.loggers[logger_name].add_summary(summary, global_step=iter_no)
 
