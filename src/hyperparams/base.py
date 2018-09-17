@@ -24,7 +24,15 @@ class Hyperparams:
 
     train_generator_adv = True
     train_autoencoder = True
-    use_batch_logits = True
+
+    train_batch_logits = True
+    train_sample_logits = True
+
+    start_tensorboard = True
+    base_port = 7001
+
+    gen_iter_count = 10
+    disc_iter_count = 40
 
     model = 'bcgan'
     exp_name = 'bcgan_0'

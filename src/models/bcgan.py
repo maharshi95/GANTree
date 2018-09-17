@@ -217,8 +217,8 @@ class Model(BaseModel):
             self.ph_X: x_batch
         })[:, 0]
         if split:
-            x_batch_real = x_batch[np.where(preds == 0)]
-            x_batch_fake = x_batch[np.where(preds == 1)]
+            x_batch_real = x_batch[np.where(preds == 1)]
+            x_batch_fake = x_batch[np.where(preds == 0)]
             return preds, x_batch_real, x_batch_fake
         else:
             return preds

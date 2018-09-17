@@ -71,10 +71,12 @@ class Model(BaseModel):
 
     def _define_losses(self):
         batch_size = tf.shape(self.ph_X)[0]
+        logit_batch_size = tf.shape(self.entropy_logits_real)[0]
+
         self.x_recon_loss = tf.reduce_mean((self.x_real - self.x_recon) ** 2)
         self.z_recon_loss = tf.reduce_mean((self.z_rand - self.z_recon) ** 2)
         # [B, 2]
-        logit_batch_size = tf.shape(self.entropy_logits_real)[0]
+
         real_entropy_labels = tf.ones([logit_batch_size, 1])
         fake_entropy_labels = tf.zeros([logit_batch_size, 1])
 
@@ -91,9 +93,24 @@ class Model(BaseModel):
 
         self.gen_sample_loss = losses.sigmoid_cross_entropy_loss(real_labels, self.logits_fake)
 
-        self.disc_loss_real = (self.disc_batch_loss_real + self.disc_sample_loss_real) / 2.0
-        self.disc_loss_fake = (self.disc_batch_loss_fake + self.disc_sample_loss_fake) / 2.0
-        self.gen_loss = (self.gen_batch_loss + self.gen_sample_loss) / 2.0
+        if H.train_sample_logits and H.train_batch_logits:
+            self.disc_loss_real = (self.disc_batch_loss_real + self.disc_sample_loss_real) / 2.0
+            self.disc_loss_fake = (self.disc_batch_loss_fake + self.disc_sample_loss_fake) / 2.0
+            self.gen_loss = (self.gen_batch_loss + self.gen_sample_loss) / 2.0
+
+        elif H.train_sample_logits:
+            self.disc_loss_real = self.disc_sample_loss_real
+            self.disc_loss_fake = self.disc_sample_loss_fake
+            self.gen_loss = self.gen_sample_loss
+
+        elif H.train_batch_logits:
+            self.disc_loss_real = self.disc_batch_loss_real
+            self.disc_loss_fake = self.disc_batch_loss_fake
+            self.gen_loss = self.gen_batch_loss
+
+        else:
+            logger.error('Logits Training set False for both sample and batch: Atleast one must be set True in Hyperparams')
+            raise Exception('Logits not set to train')
 
         self.encoder_loss = self.x_recon_loss + self.z_recon_loss
         self.decoder_loss = self.encoder_loss + 0 * self.gen_loss
@@ -242,8 +259,8 @@ class Model(BaseModel):
             self.ph_X: x_batch
         })[:, 0]
         if split:
-            x_batch_real = x_batch[np.where(preds == 0)]
-            x_batch_fake = x_batch[np.where(preds == 1)]
+            x_batch_real = x_batch[np.where(preds == 1)]
+            x_batch_fake = x_batch[np.where(preds == 0)]
             return preds, x_batch_real, x_batch_fake
         else:
             return preds

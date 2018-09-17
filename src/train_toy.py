@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib
 
 matplotlib.use('Agg')
+import numpy as np
 from matplotlib import pyplot as plt
 from exp_context import ExperimentContext
 
@@ -60,39 +61,40 @@ Model = ExperimentContext.get_model_class()
 H = ExperimentContext.get_hyperparams()
 dl = DataLoaderFactory.get_dataloader(H.dataloader, H.input_size, H.z_size)
 
+# Writing the Hyperparams file to experiment directory
 hyperparams_string_content = json.dumps(H.__dict__, default=lambda x: repr(x), indent=4, sort_keys=True)
 print(hyperparams_string_content)
 with open(paths.exp_hyperparams_file, "w") as fp:
     fp.write(hyperparams_string_content)
 
+# Building the Model and initiating Model Service
 model = Model('growing-gans')
 model.build()
 model.initiate_service()
 
 print('Model service initiated...')
 
-if resume_flag is not False:
+# Resume the training from a specific iteration - Loading the trained weights
+if resume_flag is False:
+    iter_no = 0
+else:
     try:
-        if args.resume is True:
-            iter_no = model.load_params(dir_name='all', param_group='all')
-        else:
-            iter_no = int(args.resume)
-            iter_no = model.load_params(dir_name='all', param_group='all', iter_no=iter_no)
-
+        iter_no = None if args.resume is True else args.resume
+        iter_no = model.load_params(dir_name='all', param_group='all', iter_no=iter_no)
         logger.info('Loading network weights from all-%d' % iter_no)
     except Exception as ex:
         traceback.print_exc()
         logger.error(ex)
         logger.error('Some Problem Occured while resuming... starting from iteration 1')
         raise Exception('Not found...')
-else:
-    iter_no = 0
 
 if 'all' in args.delete or 'weights' in args.delete:
     logger.warning('Deleting all weights in {}...'.format(paths.all_weights_dir))
     bash_utils.delete_recursive(paths.all_weights_dir)
     model_utils.setup_dirs()
     print('')
+
+tensorboard_ip, tensorboard_port = bash_utils.start_tensorboard(H.base_port)
 
 x_train, x_test = dl.get_data()
 print('Train Test Data loaded...')
@@ -105,7 +107,7 @@ n_step_validation = 50
 n_step_iter_save = 5000
 n_step_visualize = 1000
 n_step_generator = 10
-n_step_generator_decay = 1000
+n_step_generator_decay = 0
 
 en_loss_history = []
 de_loss_history = []
@@ -114,12 +116,25 @@ d_acc_history = []
 g_acc_history = []
 gen_loss_history = []
 
+count_gen_iter = 0
+count_disc_iter = 0
+
+
+class Networks:
+    gen = 0
+    disc = 1
+
+
+turn = Networks.gen
+
 while iter_no < max_epochs:
     iter_no += 1
 
 
 
     iter_time_start = time.time()
+
+    np.random.shuffle(x_train)
 
     z_train = dl.get_z_dist(x_train.shape[0], dist_type=H.z_dist_type)
     z_test = dl.get_z_dist(x_test.shape[0], dist_type=H.z_dist_type)
@@ -130,13 +145,23 @@ while iter_no < max_epochs:
     if H.train_autoencoder:
         model.step_train_autoencoder(train_inputs)
 
-    if (iter_no % n_step_generator) == 0:
+    if (turn == Networks.gen):
+        count_gen_iter += 1
         if H.train_generator_adv:
             model.step_train_adv_generator(train_inputs)
     else:
+        count_disc_iter += 1
         model.step_train_discriminator(train_inputs)
 
-    if (iter_no % n_step_generator_decay) == 0:
+    if count_gen_iter == H.gen_iter_count:
+        count_gen_iter = 0
+        turn = Networks.disc
+
+    elif count_disc_iter == H.disc_iter_count:
+        count_disc_iter = 0
+        turn = Networks.gen
+
+    if (n_step_generator_decay > 0 and iter_no % n_step_generator_decay) == 0:
         n_step_generator = max(n_step_generator - 1, 1)
 
     train_losses = model.compute_losses(train_inputs, model.network_loss_variables)
@@ -147,7 +172,6 @@ while iter_no < max_epochs:
         print('Step %i: Gen  Acc: %f' % (iter_no, train_losses[2]))
         print('Step %i: x_recon Loss: %f' % (iter_no, train_losses[3]))
         print('Step %i: z_recon Loss: %f' % (iter_no, train_losses[4]))
-        print()
 
     if iter_no % n_step_tboard_log == 0:
         model.get_logger('train').add_summary(train_losses[-1], iter_no)
@@ -204,3 +228,5 @@ while iter_no < max_epochs:
 
     if iter_no % n_step_console_log == 0:
         print('Single Iter Time: %.4f' % (iter_time_end - iter_time_start))
+        print('Tensorboard Logs: http://{}:{}'.format(tensorboard_ip, tensorboard_port))
+        print()
