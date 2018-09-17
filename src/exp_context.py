@@ -16,7 +16,7 @@ class ExperimentContext:
     @classmethod
     def set_context(cls, hyperparams_name, exp_name=None):
         if hyperparams_name.endswith('.py'):
-            hyperparams_name = hyperparams_name.split('/')[-1][:-3]
+            hyperparams_name = '.'.join(hyperparams_name.split('/'))[:-3]
         cls.hyperparams_name = hyperparams_name
         cls.Hyperparams = HyperparamsFactory.get_hyperparams(cls.hyperparams_name)
         cls.exp_name = exp_name or cls.Hyperparams.exp_name

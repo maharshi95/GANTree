@@ -32,7 +32,8 @@ class Hyperparams:
     base_port = 7001
 
     gen_iter_count = 10
-    disc_iter_count = 40
+    disc_iter_count = 30
+    gan_switching_criteria = 'dynamic'  # ['fixed' / 'dynamic']
 
     model = 'bcgan'
     exp_name = 'bcgan_0'

@@ -1,5 +1,5 @@
 import tensorflow as tf
-from . import base
+from hyperparams import base
 
 
 class Hyperparams(base.Hyperparams):

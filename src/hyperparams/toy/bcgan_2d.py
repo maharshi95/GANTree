@@ -1,5 +1,5 @@
 import tensorflow as tf
-from . import base
+from hyperparams import base
 
 
 class Hyperparams(base.Hyperparams):
@@ -23,5 +23,5 @@ class Hyperparams(base.Hyperparams):
     train_batch_logits = True
     train_sample_logits = True
 
-    model = 'bcgan_v2'
+    model = 'bcgan'
     exp_name = 'bcgan_2D_two_gaussians_sample_logits'
