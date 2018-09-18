@@ -4,7 +4,7 @@ import numpy as np
 import tensorflow as tf
 
 from model_components import losses
-from model_components.mnist import encoder, decoder, disc
+from model_components.mnist_new1 import encoder, decoder, disc
 from models.base import BaseModel
 from exp_context import ExperimentContext
 
@@ -55,7 +55,7 @@ class Model(BaseModel):
         self.ph_img_recon = tf.placeholder(tf.float32, [None, None, None, 1])
         self.ph_img_gen = tf.placeholder(tf.float32, [None, None, None, 1])
         self.ph_training_flag = tf.placeholder(tf.bool)
-        self.test_bn = True
+        self.test_bn = False
 
     def _define_network_graph(self):
         with tf.variable_scope(self.model_scope, reuse=tf.AUTO_REUSE):
@@ -199,7 +199,7 @@ class Model(BaseModel):
     def _define_operations(self):
         with tf.variable_scope(self.model_scope, reuse=tf.AUTO_REUSE):
             extra_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-            # print('EXTRA_UPDATE_ops', extra_update_ops)
+            print('EXTRA_UPDATE_ops',extra_update_ops)
             with tf.control_dependencies(extra_update_ops):
                 autoencoder_trainable_params = tf.global_variables(self.encoder_scope) + tf.global_variables(self.decoder_scope)
                 opt = tf.train.AdamOptimizer(H.lr_autoencoder, beta1=H.beta1, beta2=H.beta2)

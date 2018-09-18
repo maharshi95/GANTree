@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.contrib import layers
 from exp_context import ExperimentContext
+from model_components import commons
 
 H = ExperimentContext.Hyperparams
 
@@ -15,10 +16,6 @@ def n_layers_fc(inputs, n_units, activations=None, name='n_layers_fully_connecte
             act_fn = activations[i]
             next_layer = layers.fully_connected(next_layer, n_units[i], activation_fn=act_fn, scope=scope)
     return next_layer
-
-
-def lrelu(x, alpha=0.2):
-    return tf.maximum(x, alpha * x)
 
 
 def transpose_conv2d(x, filters):
@@ -46,29 +43,25 @@ def encoder(x, alpha=0.2, training=True):  # change
     with tf.variable_scope('encoder', reuse=tf.AUTO_REUSE):
         # Input layer is 32x32x1
         conv1 = conv2d(x, 64, name='conv1')
-        conv1 = tf.nn.leaky_relu(conv1, alpha)
+        conv1 = tf.nn.leaky_relu(conv1)
         print conv1.shape
 
         conv2 = conv2d(conv1, 128, name='conv2')
         conv2 = batch_norm(conv2, training=training)
-        conv2 = tf.nn.leaky_relu(conv2, alpha)
+        conv2 = tf.nn.leaky_relu(conv2)
         print conv2.shape
 
         conv3 = conv2d(conv2, 256, name='conv3')
         conv3 = batch_norm(conv3, training=training)
-        conv3 = tf.nn.leaky_relu(conv3, alpha)
+        conv3 = tf.nn.leaky_relu(conv3)
         print conv3.shape
         # Flatten it
         flat = tf.reshape(conv3, (-1, 4 * 4 * 256))
         # print flat.shape
-        z_reconstruct = dense(flat, H.z_size)
-        print 'z_recons  ', z_reconstruct.shape
-        logits = dense(flat, 1)
-        logits_reshape = tf.reshape(logits, [-1, H.logit_batch_size])
-        entropy_logits = dense(logits_reshape, 1)
-        out = tf.sigmoid(logits)
+        z = dense(flat, H.z_size)
+        print 'z_recons  ', z.shape
 
-        return out, logits, entropy_logits, z_reconstruct
+        return commons.scaled_tanh(z, H.z_bound)
 
 
 def decoder(z, output_dim=1, training=True):  # change
@@ -77,18 +70,18 @@ def decoder(z, output_dim=1, training=True):  # change
 
         fc1 = tf.reshape(fc1, (-1, 4, 4, 256))
         fc1 = batch_norm(fc1, training=training)
-        fc1 = tf.nn.relu(fc1)
+        fc1 = tf.nn.leaky_relu(fc1)
         # 4x4
         print fc1.shape
         t_conv1 = transpose_conv2d(fc1, 128)
         t_conv1 = batch_norm(t_conv1, training=training)
-        t_conv1 = tf.nn.relu(t_conv1)
+        t_conv1 = tf.nn.leaky_relu(t_conv1)
         # 8x8
         print t_conv1.shape
 
         t_conv2 = transpose_conv2d(t_conv1, 64)
         t_conv2 = batch_norm(t_conv2, training=training)
-        t_conv2 = tf.nn.relu(t_conv2)
+        t_conv2 = tf.nn.leaky_relu(t_conv2)
         # 16x16
         print t_conv2.shape
 
@@ -98,9 +91,32 @@ def decoder(z, output_dim=1, training=True):  # change
         print gen_out
 
         out = tf.tanh(gen_out)
-        return gen_out  # 32x32x1
+        return out  # 32x32x1
 
 
 def disc(x, training=True):  # change
-    out, logits, z = encoder(x, training=training)
-    return out, logits, z
+    with tf.variable_scope('disc', reuse=tf.AUTO_REUSE):
+        # Input layer is 32x32x1
+        conv1 = conv2d(x, 64, name='conv1')
+        conv1 = tf.nn.leaky_relu(conv1)
+        print conv1.shape
+
+        conv2 = conv2d(conv1, 128, name='conv2')
+        conv2 = batch_norm(conv2, training=training)
+        conv2 = tf.nn.leaky_relu(conv2)
+        print conv2.shape
+
+        conv3 = conv2d(conv2, 256, name='conv3')
+        conv3 = batch_norm(conv3, training=training)
+        conv3 = tf.nn.leaky_relu(conv3)
+        print conv3.shape
+        # Flatten it
+        flat = tf.reshape(conv3, (-1, 4 * 4 * 256))
+        prelogits = dense(flat, 64)
+        prelogits_fc = dense(prelogits, 16)
+        # print flat.shape
+        logits = dense(prelogits, 1)
+        prelogits_reshape = tf.reshape(prelogits_fc, [-1, H.logit_batch_size * 16])
+        entropy_logits = dense(prelogits_reshape, 1)
+        prob = tf.sigmoid(logits)
+        return prob, logits, entropy_logits

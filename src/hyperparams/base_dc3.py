@@ -14,7 +14,7 @@ class Hyperparams(base.Hyperparams):  # change
     input_width = 32
     input_channel = 1
 
-    z_size = 32
+    z_size = 100
 
     lr_autoencoder = 0.0001
     lr_decoder = 0.0001
@@ -22,19 +22,20 @@ class Hyperparams(base.Hyperparams):  # change
     beta1 = 0.6
     beta2 = 0.99
 
-    z_dist_type = 'normal'  # ['uniform', 'normal', 'sphere']
+    z_dist_type = 'uniform'  # ['uniform', 'normal', 'sphere']
     show_visual_while_training = False
 
-    train_generator_adv = True
-    train_autoencoder = True
-    z_bound = 4
+    z_bound = 1
 
-    train_batch_logits = False
+    train_generator_adv = True
+    train_autoencoder = False
+
+    train_batch_logits = True
     train_sample_logits = True
     gen_iter_count = 20
     disc_iter_count = 30
     combined_iter_count = gen_iter_count + disc_iter_count
 
     model = 'dcgan'
-    exp_name = 'dcgan_mnist_0'
+    exp_name = 'dcgan_mnist_1_sample_logits'
     dataloader = 'mnist'

@@ -1,5 +1,5 @@
 from __future__ import division, print_function, absolute_import
-import os, time, argparse, logging, traceback
+import os, time, argparse, logging, traceback, json
 
 import numpy as np
 import matplotlib
@@ -59,28 +59,32 @@ H = ExperimentContext.get_hyperparams()
 print('input_size:', H.input_size, 'latent_size:', H.z_size)
 dl = DataLoaderFactory.get_image_dataloader(H.dataloader, H.batch_size_train, H.batch_size_test)
 
+# Writing the Hyperparams file to experiment directory
+hyperparams_string_content = json.dumps(H.__dict__, default=lambda x: repr(x), indent=4, sort_keys=True)
+print(hyperparams_string_content)
+with open(paths.exp_hyperparams_file, "w") as fp:
+    fp.write(hyperparams_string_content)
+
+# Building the Model and initiating Model Service
 model = Model('growing-gans')
 model.build()
 model.initiate_service()
 
 print('Model service initiated...')
 
-if resume_flag is not False:
+# Resume the training from a specific iteration - Loading the trained weights
+if resume_flag is False:
+    iter_no = 0
+else:
     try:
-        if args.resume is True:
-            iter_no = model.load_params(dir_name='all', param_group='all')
-        else:
-            iter_no = int(args.resume)
-            iter_no = model.load_params(dir_name='all', param_group='all', iter_no=iter_no)
-
+        iter_no = None if args.resume is True else args.resume
+        iter_no = model.load_params_from_history(dir_name='all', param_group='all', iter_no=iter_no)
         logger.info('Loading network weights from all-%d' % iter_no)
     except Exception as ex:
         traceback.print_exc()
         logger.error(ex)
         logger.error('Some Problem Occured while resuming... starting from iteration 1')
         raise Exception('Not found...')
-else:
-    iter_no = 0
 
 if 'all' in args.delete or 'weights' in args.delete:
     logger.warning('Deleting all weights in {}...'.format(paths.all_weights_dir))
@@ -94,10 +98,9 @@ max_epochs = 300000
 
 n_step_console_log = 20
 n_step_tboard_log = 10
-n_step_validation = 30
-n_step_iter_save = 5000
-n_step_visualize = 1000
-n_step_generator = 30
+n_step_validation = 50
+n_step_iter_save = 2000
+n_step_visualize = 200
 # n_step_generator_decay = 1500
 
 en_loss_history = []
@@ -107,7 +110,17 @@ d_acc_history = []
 g_acc_history = []
 gen_loss_history = []
 
-z_constant = dl.get_z_dist(10, dim=32, dist_type=H.z_dist_type)
+z_seed = {
+    'train': dl.get_z_dist(10, dim=H.z_size, dist_type=H.z_dist_type),
+    'test': dl.get_z_dist(10, dim=H.z_size, dist_type=H.z_dist_type)
+}
+x_seed = {
+    'train': dl.random_batch(split='train', batch_size=20),
+    'test': dl.random_batch(split='test', batch_size=20)
+}
+
+BN_train = True
+BN_test = True
 
 while iter_no < max_epochs:
     iter_no += 1
@@ -116,18 +129,19 @@ while iter_no < max_epochs:
     # print('x_train',x_train.shape)
     # print('x_test',x_test.shape)
     x_train, x_test = dl.get_data()
-    z_train = dl.get_z_dist(x_train.shape[0], dim=32, dist_type=H.z_dist_type)
-    z_test = dl.get_z_dist(x_test.shape[0], dim=32, dist_type=H.z_dist_type)
+    z_train = dl.get_z_dist(x_train.shape[0], dim=H.z_size, dist_type=H.z_dist_type)
+    z_test = dl.get_z_dist(x_test.shape[0], dim=H.z_size, dist_type=H.z_dist_type)
 
     # print('z_train', z_train.shape)
     # print('z_test', z_test.shape)
 
-    train_inputs = x_train, z_train
-    test_inputs = x_test, z_test
+    train_inputs = x_train, z_train, BN_train
+    test_inputs = x_test, z_test, BN_test
 
-    model.step_train_autoencoder(train_inputs)
+    if H.train_autoencoder:
+        model.step_train_autoencoder(train_inputs)
 
-    if (iter_no % n_step_generator) < 10:
+    if (iter_no % H.combined_iter_count) < H.gen_iter_count:
         if H.train_generator_adv:
             model.step_train_adv_generator(train_inputs)
     else:
@@ -149,53 +163,20 @@ while iter_no < max_epochs:
     if iter_no % n_step_tboard_log == 0:
         model.get_logger('train').add_summary(train_losses[-1], iter_no)
 
+    if iter_no % n_step_visualize == 0:
+        for split in ['train', 'test']:
+            x_gt = x_seed[split]
+            x_recon_seed = model.reconstruct_x(x_seed[split])
+            x_gen_seed = model.decode(z_seed[split])
+
+            model.log_images(split, [x_gt, x_recon_seed, x_gen_seed], iter_no)
+
     if iter_no % n_step_validation == 0:
         test_losses = model.compute_losses(test_inputs, model.network_loss_variables)
         model.get_logger('test').add_summary(test_losses[-1], iter_no)
 
     if iter_no % n_step_iter_save == 0:
         model.save_params(iter_no=iter_no)
-
-    if H.show_visual_while_training and (iter_no % n_step_visualize == 0 or (iter_no < n_step_visualize and iter_no % 200 == 0)):
-        def get_x_plots_data(x_input):
-            _, x_real_true, x_real_false = model.discriminate(x_input)
-
-            z_real_true = model.encode(x_real_true)
-            z_real_false = model.encode(x_real_false)
-
-            x_recon = model.reconstruct_x(x_input)
-            _, x_recon_true, x_recon_false = model.discriminate(x_recon)
-
-            z_recon_true = model.encode(x_recon_true)
-            z_recon_false = model.encode(x_recon_false)
-
-            return [
-                (x_real_true, x_real_false),
-                (z_real_true, z_real_false),
-                (x_recon_true, x_recon_false),
-                (z_recon_true, z_recon_false)
-            ]
-
-
-        def get_z_plots_data(z_input):
-            x_input = model.decode(z_input)
-            x_plots = get_x_plots_data(x_input)
-            return [z_input] + x_plots[:-1]
-
-
-        x_full = dl.get_full_space()
-
-        x_plots_row1 = get_x_plots_data(x_test)
-        z_plots_row2 = get_z_plots_data(z_test)
-        x_plots_row3 = get_x_plots_data(x_full)
-        plots_data = (x_plots_row1, z_plots_row2, x_plots_row3)
-        figure = viz_utils.get_figure(plots_data)
-        figure_name = 'plots-iter-%d.png' % iter_no
-        figure_path = paths.get_result_path(figure_name)
-        figure.savefig(figure_path)
-        plt.close(figure)
-        img = plt.imread(figure_path)
-        model.log_image('test', img, iter_no)
 
     iter_time_end = time.time()
 

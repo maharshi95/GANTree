@@ -9,7 +9,7 @@ H = ExperimentContext.get_hyperparams()
 
 
 class MNISTDataLoader(object):
-    def __init__(self, batch_size_train=32, batch_size_test=32,):
+    def __init__(self, batch_size_train=32, batch_size_test=32, ):
         self.data = {
             'train': np.load('./data/train.npy'),
             'test': np.load('./data/test.npy')
@@ -22,7 +22,6 @@ class MNISTDataLoader(object):
             'train': 0,
             'test': 0
         }
-        print self.batch_size
 
         self.n_batches = {
             'train': (len(self.data['train']) // self.batch_size['train']),
@@ -31,6 +30,13 @@ class MNISTDataLoader(object):
 
     def shuffle(self, dataset):
         np.random.shuffle(dataset)
+
+    def random_batch(self, split, batch_size):
+        perm = np.random.permutation(len(self.data[split]))
+        shuffled_data = self.data[split][perm]
+        n_batches = len(shuffled_data) // batch_size
+        i_batch = np.random.randint(0, n_batches)
+        return shuffled_data[i_batch * batch_size:(i_batch + 1) * batch_size]
 
     def _scale(self, x, feature_range=(-1, 1)):
         """
@@ -49,7 +55,7 @@ class MNISTDataLoader(object):
         batch_idx = self.current_batch[split]
         batch_size = self.batch_size[split]
 
-        if batch_idx == 0 or split == 'train':
+        if batch_idx == 0:  # or split == 'train':
             self.shuffle(self.data[split])
 
         self.current_batch[split] = (self.current_batch[split] + 1) % self.n_batches[split]

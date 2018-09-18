@@ -21,13 +21,12 @@ class Hyperparams(base.Hyperparams):  # change
     lr_disc = 0.0001
     beta1 = 0.6
     beta2 = 0.99
-
+    z_bound = 4
     z_dist_type = 'normal'  # ['uniform', 'normal', 'sphere']
     show_visual_while_training = False
 
     train_generator_adv = True
-    train_autoencoder = True
-    z_bound = 4
+    train_autoencoder = False
 
     train_batch_logits = False
     train_sample_logits = True
@@ -36,5 +35,5 @@ class Hyperparams(base.Hyperparams):  # change
     combined_iter_count = gen_iter_count + disc_iter_count
 
     model = 'dcgan'
-    exp_name = 'dcgan_mnist_0'
+    exp_name = 'dcgan_mnist_1_batch_logits'
     dataloader = 'mnist'
