@@ -14,9 +14,9 @@ class BaseDataLoader(object):
     def get_full_space(self):
         return np.random.uniform(-10, 10, (1000, self.input_size))
 
-    def get_z_dist(self, n_samples, dist_type):
+    def get_z_dist(self, n_samples, dist_type, bounds=1):
         if dist_type == 'uniform':
-            return np.random.uniform(-1, 1, (n_samples, self.latent_size))
+            return np.random.uniform(-bounds, bounds, (n_samples, self.latent_size))
         if dist_type == 'normal':
             return np.random.normal(0, 1, (n_samples, self.latent_size))
         if dist_type == 'sphere':

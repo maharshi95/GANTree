@@ -22,8 +22,9 @@ train_data = ''
 test_data = ''
 
 
-def log_writer_path(writer_name):
-    return osp.join(logs_base_dir, writer_name)
+def log_writer_path(writer_name, model_name=None):
+    model_name = model_name or ''
+    return osp.join(logs_base_dir, model_name, writer_name)
 
 
 all_weights_dir = osp.join(weights_base_dir, 'all/')

@@ -100,12 +100,12 @@ class BaseModel():
             for parent_var_name in parent_model_param_values:
                 new_variable_name = parent_var_name.replace(parent_model.model_name, self.model_name)
                 if new_variable_name not in all_new_variable_names:
-                    print 'Oops!, {} not in var list'.format(new_variable_name)
+                    logger.warning('Oops!, {} not in var list'.format(new_variable_name))
                 var_value = parent_model_param_values[parent_var_name]
                 new_variable = tf.get_variable(new_variable_name)
                 new_variable.load(var_value, self.session)
 
-    def load_params_from_history(self, dir_name='all', param_group='all', tag='iter', iter_no=None):
+    def load_params_from_checkpoints(self, dir_name='all', param_group='all', tag='iter', iter_no=None):
         param_saver = self.get_param_saver(param_group)
         weights_path = paths.get_saved_params_path(dir_name, self.model_name, param_group, tag, iter_no)
         if iter_no is None:
@@ -135,7 +135,7 @@ class BaseModel():
                 old_model_scope = old_var_name.split('/')[0]
                 new_variable_name = old_var_name.replace(old_model_scope, self.model_name)
                 if new_variable_name + ':0' not in all_new_variable_names:
-                    print 'Oops!, {} not in var list'.format(new_variable_name)
+                    logger.warning('Oops!, {} not in var list'.format(new_variable_name))
                 print(new_variable_name)
                 if 'RMSProp' in new_variable_name:
                     print 'ignoreing...'

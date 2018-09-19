@@ -7,7 +7,6 @@ import numpy as np
 import matplotlib
 
 matplotlib.use('Agg')
-import numpy as np
 from matplotlib import pyplot as plt
 from exp_context import ExperimentContext
 
@@ -155,8 +154,8 @@ while iter_no < max_epochs:
 
     np.random.shuffle(x_train)
 
-    z_train = dl.get_z_dist(x_train.shape[0], dist_type=H.z_dist_type)
-    z_test = dl.get_z_dist(x_test.shape[0], dist_type=H.z_dist_type)
+    z_train = dl.get_z_dist(x_train.shape[0], dist_type=H.z_dist_type, bounds=H.z_bounds)
+    z_test = dl.get_z_dist(x_test.shape[0], dist_type=H.z_dist_type, bounds=H.z_bounds)
 
     train_inputs = x_train, z_train
     test_inputs = x_test, z_test

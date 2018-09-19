@@ -9,10 +9,9 @@ def encoder(x):
     with tf.variable_scope('encoder', reuse=tf.AUTO_REUSE):
         n_units = [128, 128, 64, 64, H.z_size]
         n_layers = len(n_units)
-        activations = [tf.nn.elu] * (n_layers - 1) + [commons.get_scaled_tanh(H.z_bounds)]
+        activations = [tf.nn.elu] * (n_layers - 1) + [commons.get_scaled_tanh(4.0)]
         z = commons.n_layers_dense(x, n_units, activations)
         return z
-
 
 def decoder(z):
     with tf.variable_scope('decoder', reuse=tf.AUTO_REUSE):
