@@ -94,13 +94,13 @@ if 'all' in args.delete or 'weights' in args.delete:
 
 print('Train Test Data loaded...')
 
-max_epochs = 300000
+max_epochs = 100000
 
 n_step_console_log = 20
 n_step_tboard_log = 10
 n_step_validation = 50
 n_step_iter_save = 2000
-n_step_visualize = 200
+n_step_visualize = 100
 # n_step_generator_decay = 1500
 
 en_loss_history = []
@@ -111,16 +111,19 @@ g_acc_history = []
 gen_loss_history = []
 
 z_seed = {
-    'train': dl.get_z_dist(10, dim=H.z_size, dist_type=H.z_dist_type),
-    'test': dl.get_z_dist(10, dim=H.z_size, dist_type=H.z_dist_type)
+    'train': dl.get_z_dist(3, dim=H.z_size, dist_type=H.z_dist_type),
+    'test': dl.get_z_dist(3, dim=H.z_size, dist_type=H.z_dist_type)
 }
 x_seed = {
-    'train': dl.random_batch(split='train', batch_size=20),
-    'test': dl.random_batch(split='test', batch_size=20)
+    'train': dl.random_batch(split='train', batch_size=3),
+    'test': dl.random_batch(split='test', batch_size=3)
 }
+# x_seed['test'] = x_seed['train']
 
 BN_train = True
-BN_test = True
+BN_test = False
+print('BN_train: ',BN_train)
+print('BN_test: ',BN_test)
 
 while iter_no < max_epochs:
     iter_no += 1
@@ -129,8 +132,12 @@ while iter_no < max_epochs:
     # print('x_train',x_train.shape)
     # print('x_test',x_test.shape)
     x_train, x_test = dl.get_data()
+    # x_test = x_train
+
     z_train = dl.get_z_dist(x_train.shape[0], dim=H.z_size, dist_type=H.z_dist_type)
     z_test = dl.get_z_dist(x_test.shape[0], dim=H.z_size, dist_type=H.z_dist_type)
+
+    # z_test = z_train
 
     # print('z_train', z_train.shape)
     # print('z_test', z_test.shape)
@@ -138,12 +145,9 @@ while iter_no < max_epochs:
     train_inputs = x_train, z_train, BN_train
     test_inputs = x_test, z_test, BN_test
 
-    if H.train_autoencoder:
-        model.step_train_autoencoder(train_inputs)
-
     if (iter_no % H.combined_iter_count) < H.gen_iter_count:
-        if H.train_generator_adv:
-            model.step_train_adv_generator(train_inputs)
+        model.step_train_encoder(train_inputs)
+        model.step_train_decoder(train_inputs)
     else:
         model.step_train_discriminator(train_inputs)
 
@@ -153,11 +157,11 @@ while iter_no < max_epochs:
     train_losses = model.compute_losses(train_inputs, model.network_loss_variables)
     #
     if iter_no % n_step_console_log == 0:
-        print('Step %i: Encoder Loss: %f' % (iter_no, train_losses[0]))
-        print('Step %i: Disc Acc: %f' % (iter_no, train_losses[1]))
-        print('Step %i: Gen  Acc: %f' % (iter_no, train_losses[2]))
-        print('Step %i: x_recon Loss: %f' % (iter_no, train_losses[3]))
-        print('Step %i: z_recon Loss: %f' % (iter_no, train_losses[4]))
+        print('%s: Step %i: Encoder Loss: %f' % (ExperimentContext.exp_name, iter_no, train_losses[0]))
+        print('%s: Step %i: Disc Acc: %f' % (ExperimentContext.exp_name, iter_no, train_losses[1]))
+        print('%s: Step %i: Gen  Acc: %f' % (ExperimentContext.exp_name, iter_no, train_losses[2]))
+        print('%s: Step %i: x_recon Loss: %f' % (ExperimentContext.exp_name, iter_no, train_losses[3]))
+        print('%s: Step %i: z_recon Loss: %f' % (ExperimentContext.exp_name, iter_no, train_losses[4]))
         print()
 
     if iter_no % n_step_tboard_log == 0:
@@ -166,9 +170,12 @@ while iter_no < max_epochs:
     if iter_no % n_step_visualize == 0:
         for split in ['train', 'test']:
             x_gt = x_seed[split]
-            x_recon_seed = model.reconstruct_x(x_seed[split])
-            x_gen_seed = model.decode(z_seed[split])
-
+            bn_flag = BN_train if split == 'train' else BN_test
+            x_recon_seed = model.reconstruct_x(x_seed[split], flag=bn_flag)
+            print('loss', np.mean((x_recon_seed - x_seed[split]) ** 2))
+            x_gen_seed = model.decode(z_seed[split], flag=bn_flag)
+            # x_recon_seed = model.reconstruct_x(x_seed[split])
+            # x_gen_seed = model.decode(z_seed[split])
             model.log_images(split, [x_gt, x_recon_seed, x_gen_seed], iter_no)
 
     if iter_no % n_step_validation == 0:
@@ -181,4 +188,4 @@ while iter_no < max_epochs:
     iter_time_end = time.time()
 
     if iter_no % n_step_console_log == 0:
-        print('Single Iter Time: %.4f' % (iter_time_end - iter_time_start))
+        print('%s: Single Iter Time: %.4f' % (ExperimentContext.exp_name, iter_time_end - iter_time_start))

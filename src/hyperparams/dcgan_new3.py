@@ -16,9 +16,9 @@ class Hyperparams(base.Hyperparams):  # change
 
     z_size = 100
 
-    lr_autoencoder = 0.0001
-    lr_decoder = 0.0001
-    lr_disc = 0.0001
+    lr_autoencoder = 0.00003
+    lr_decoder = 0.00003
+    lr_disc = 0.00003
     beta1 = 0.6
     beta2 = 0.99
 
@@ -37,5 +37,5 @@ class Hyperparams(base.Hyperparams):  # change
     combined_iter_count = gen_iter_count + disc_iter_count
 
     model = 'dcgan_new1'
-    exp_name = 'd_complete'
+    exp_name = 'd_complete_new_arch'
     dataloader = 'mnist'

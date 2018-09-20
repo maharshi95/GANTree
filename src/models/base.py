@@ -170,9 +170,9 @@ class BaseModel():
         return param_values
 
     @abstractmethod
-    def encode(self, x):
+    def encode(self, x, *args, **kwargs):
         return NotImplemented
 
     @abstractmethod
-    def decode(self, z):
+    def decode(self, z, *args, **kwargs):
         return NotImplemented

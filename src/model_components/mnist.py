@@ -18,24 +18,25 @@ def n_layers_fc(inputs, n_units, activations=None, name='n_layers_fully_connecte
     return next_layer
 
 
-def transpose_conv2d(x, filters):
+def transpose_conv2d(x, filters, kernel_size=5, strides=2, padding='same'):
     kernel_initializer = tf.random_normal_initializer(mean=0.0, stddev=0.02)
-    return tf.layers.conv2d_transpose(x, filters, 5, strides=2, padding='same', kernel_initializer=kernel_initializer)
+    return tf.layers.conv2d_transpose(x, filters, kernel_size=kernel_size, strides=strides, padding=padding,
+                                      kernel_initializer=kernel_initializer)
 
 
 def batch_norm(x, training, epsilon=1e-5, momentum=0.9):
     return tf.layers.batch_normalization(x, training=training, epsilon=epsilon, momentum=momentum)
+    # return x
 
-
-def dense(x, out_units):
+def dense(x, out_units, activation_fn=None):
     kernel = tf.random_normal_initializer(mean=0.0, stddev=0.3)
     #     return tf.layers.dense(x, out_units, activation=None)
-    return layers.fully_connected(x, out_units, activation_fn=None)
+    return layers.fully_connected(x, out_units, activation_fn=activation_fn)
 
 
-def conv2d(x, filters, name):
+def conv2d(x, filters, name, kernel_size=5, strides=2, padding="same", activation=None):
     kernel_initializer = tf.random_normal_initializer(mean=0.0, stddev=0.02)
-    return tf.layers.conv2d(x, filters, kernel_size=5, strides=2, padding="same", activation=None,
+    return tf.layers.conv2d(x, filters, kernel_size=kernel_size, strides=strides, padding=padding, activation=activation,
                             kernel_initializer=kernel_initializer, name=name)
 
 

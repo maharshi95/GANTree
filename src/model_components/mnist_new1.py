@@ -19,10 +19,6 @@ def n_layers_fc(inputs, n_units, activations=None, name='n_layers_fully_connecte
     return next_layer
 
 
-def lrelu(x, alpha=0.2):
-    return tf.maximum(x, alpha * x)
-
-
 def transpose_conv2d(x, filters, kernel_size=5, strides=2, padding='same'):
     kernel_initializer = tf.random_normal_initializer(mean=0.0, stddev=0.02)
     return tf.layers.conv2d_transpose(x, filters, kernel_size=kernel_size, strides=strides, padding=padding,
@@ -30,8 +26,9 @@ def transpose_conv2d(x, filters, kernel_size=5, strides=2, padding='same'):
 
 
 def batch_norm(x, training, epsilon=1e-5, momentum=0.9):
+    training = True
     return tf.layers.batch_normalization(x, training=training, epsilon=epsilon, momentum=momentum)
-
+    # return x
 
 def dense(x, out_units, activation_fn=None):
     kernel = tf.random_normal_initializer(mean=0.0, stddev=0.3)

@@ -31,13 +31,6 @@ class MNISTDataLoader(object):
     def shuffle(self, dataset):
         np.random.shuffle(dataset)
 
-    def random_batch(self, split, batch_size):
-        perm = np.random.permutation(len(self.data[split]))
-        shuffled_data = self.data[split][perm]
-        n_batches = len(shuffled_data) // batch_size
-        i_batch = np.random.randint(0, n_batches)
-        return shuffled_data[i_batch * batch_size:(i_batch + 1) * batch_size]
-
     def _scale(self, x, feature_range=(-1, 1)):
         """
         Scale the images to have pixel values between -1 and 1
@@ -46,6 +39,14 @@ class MNISTDataLoader(object):
         min, max = feature_range
         x = x * (max - min) + min
         return x
+
+    def random_batch(self, split, batch_size):
+        perm = np.random.permutation(len(self.data[split]))
+        shuffled_data = self.data[split][perm]
+        n_batches = len(shuffled_data) // batch_size
+        i_batch = np.random.randint(0, n_batches)
+        batch = shuffled_data[i_batch * batch_size:(i_batch + 1) * batch_size]
+        return self._scale(batch)
 
     def next_batch(self, split):
         """

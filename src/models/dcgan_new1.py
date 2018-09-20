@@ -55,7 +55,7 @@ class Model(BaseModel):
         self.ph_img_recon = tf.placeholder(tf.float32, [None, None, None, 1])
         self.ph_img_gen = tf.placeholder(tf.float32, [None, None, None, 1])
         self.ph_training_flag = tf.placeholder(tf.bool)
-        self.test_bn = False
+        # self.test_bn = False
 
     def _define_network_graph(self):
         with tf.variable_scope(self.model_scope, reuse=tf.AUTO_REUSE):
@@ -118,8 +118,8 @@ class Model(BaseModel):
             logger.error('Logits Training set False for both sample and batch: Atleast one must be set True in Hyperparams')
             raise Exception('Logits not set to train')
 
-        self.encoder_loss = self.x_recon_loss + self.z_recon_loss
-        self.decoder_loss = self.encoder_loss + 0 * self.gen_loss
+        self.encoder_loss = self.x_recon_loss
+        self.decoder_loss = 0.2 * self.z_recon_loss + 1 * self.gen_loss
         self.disc_loss = self.disc_loss_real + self.disc_loss_fake
 
     def _define_metrics(self):
@@ -198,20 +198,21 @@ class Model(BaseModel):
 
     def _define_operations(self):
         with tf.variable_scope(self.model_scope, reuse=tf.AUTO_REUSE):
+            encoder_params = tf.global_variables(self.encoder_scope)
+            opt1 = tf.train.AdamOptimizer(H.lr_autoencoder, beta1=H.beta1, beta2=H.beta2)
+
+            decoder_params = tf.global_variables(self.decoder_scope)
+            opt2 = tf.train.AdamOptimizer(H.lr_autoencoder, beta1=H.beta1, beta2=H.beta2)
+
+            disc_params = tf.global_variables(self.disc_scope)
+            opt3 = tf.train.AdamOptimizer(H.lr_autoencoder, beta1=H.beta1, beta2=H.beta2)
+
             extra_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-            print('EXTRA_UPDATE_ops',extra_update_ops)
+
             with tf.control_dependencies(extra_update_ops):
-                autoencoder_trainable_params = tf.global_variables(self.encoder_scope) + tf.global_variables(self.decoder_scope)
-                opt = tf.train.AdamOptimizer(H.lr_autoencoder, beta1=H.beta1, beta2=H.beta2)
-                self.autoencoder_train_op = opt.minimize(self.encoder_loss, var_list=autoencoder_trainable_params)
-
-                decoder_params = tf.global_variables(self.decoder_scope)
-                opt = tf.train.AdamOptimizer(H.lr_autoencoder, beta1=H.beta1, beta2=H.beta2)
-                self.adv_gen_train_op = opt.minimize(self.gen_loss, var_list=decoder_params)
-
-                disc_params = tf.global_variables(self.disc_scope)
-                opt = tf.train.AdamOptimizer(H.lr_autoencoder, beta1=H.beta1, beta2=H.beta2)
-                self.adv_disc_train_op = opt.minimize(self.disc_loss, var_list=disc_params)
+                self.encoder_train_op = opt1.minimize(self.encoder_loss, var_list=encoder_params)
+                self.decoder_train_op = opt2.minimize(self.decoder_loss, var_list=decoder_params)
+                self.disc_train_op = opt3.minimize(self.disc_loss, var_list=disc_params)
 
     @property
     def network_loss_variables(self):
@@ -225,17 +226,17 @@ class Model(BaseModel):
         ]
         return network_losses
 
-    def step_train_autoencoder(self, inputs):
+    def step_train_encoder(self, inputs):
         x_input, z_input, flag = inputs
-        self.session.run(self.autoencoder_train_op, feed_dict={
+        self.session.run(self.encoder_train_op, feed_dict={
             self.ph_X: x_input,
             self.ph_Z: z_input,
             self.ph_training_flag: flag
         })
 
-    def step_train_adv_generator(self, inputs):
+    def step_train_decoder(self, inputs):
         x_input, z_input, flag = inputs
-        self.session.run(self.adv_gen_train_op, feed_dict={
+        self.session.run(self.decoder_train_op, feed_dict={
             self.ph_X: x_input,
             self.ph_Z: z_input,
             self.ph_training_flag: flag
@@ -243,7 +244,7 @@ class Model(BaseModel):
 
     def step_train_discriminator(self, inputs):
         x_input, z_input, flag = inputs
-        self.session.run(self.adv_disc_train_op, feed_dict={
+        self.session.run(self.disc_train_op, feed_dict={
             self.ph_X: x_input,
             self.ph_Z: z_input,
             self.ph_training_flag: flag
@@ -261,34 +262,34 @@ class Model(BaseModel):
     def run(self, fetches, feed_dict=None, options=None, run_metadata=None):
         return self.session.run(fetches, feed_dict, options, run_metadata)
 
-    def encode(self, x_batch):
+    def encode(self, x_batch, *args, **kwargs):
         return self.session.run(self.z_real, {
             self.ph_X: x_batch,
-            self.ph_training_flag: self.test_bn
+            self.ph_training_flag: kwargs['flag']
         })
 
-    def decode(self, z_batch):
+    def decode(self, z_batch, *args, **kwargs):
         return self.session.run(self.x_fake, {
             self.ph_Z: z_batch,
-            self.ph_training_flag: self.test_bn
+            self.ph_training_flag: kwargs['flag']
         })
 
-    def reconstruct_x(self, x_batch):
+    def reconstruct_x(self, x_batch, *args, **kwargs):
         return self.session.run(self.x_recon, {
             self.ph_X: x_batch,
-            self.ph_training_flag: self.test_bn
+            self.ph_training_flag: kwargs['flag']
         })
 
-    def reconstruct_z(self, z_batch):
+    def reconstruct_z(self, z_batch, *args, **kwargs):
         return self.session.run(self.z_recon, {
             self.ph_Z: z_batch,
-            self.ph_training_flag: self.test_bn
+            self.ph_training_flag: kwargs['flag']
         })
 
-    def discriminate(self, x_batch, split=True):
+    def discriminate(self, x_batch, split=True, *args, **kwargs):
         preds = self.session.run(self.disc_real_preds, {
             self.ph_X: x_batch,
-            self.ph_training_flag: self.test_bn
+            self.ph_training_flag: kwargs['flag']
         })[:, 0]
         if split:
             x_batch_real = x_batch[np.where(preds == 1)]
