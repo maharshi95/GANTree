@@ -231,9 +231,6 @@ class Model(BaseModel):
         })
         return network_outputs
 
-    def run(self, fetches, feed_dict=None, options=None, run_metadata=None):
-        return self.session.run(fetches, feed_dict, options, run_metadata)
-
     def encode(self, x_batch):
         return self.session.run(self.z_real, {
             self.ph_X: x_batch

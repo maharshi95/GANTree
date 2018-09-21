@@ -20,3 +20,7 @@ def unit_norm(A, axis=-1):
 
 def one_hot(labels, n_classes):
     return np.eye(n_classes)[labels]
+
+
+def shuffled_copy(inputs):
+    return inputs[np.random.permutation(inputs.shape[0])]

@@ -160,9 +160,28 @@ class BaseModel():
         return param_values
 
     @abstractmethod
+    def step_train_autoencoder(self, inputs):
+        return NotImplemented
+
+    @abstractmethod
+    def step_train_adv_generator(self, inputs):
+        return NotImplemented
+
+    @abstractmethod
+    def step_train_discriminator(self, inputs):
+        return NotImplemented
+
+    @abstractmethod
+    def compute_losses(self, inputs, losses):
+        return NotImplemented
+
+    @abstractmethod
     def encode(self, x):
         return NotImplemented
 
     @abstractmethod
     def decode(self, z):
         return NotImplemented
+
+    def run(self, fetches, feed_dict=None, options=None, run_metadata=None):
+        return self.session.run(fetches, feed_dict, options, run_metadata)
