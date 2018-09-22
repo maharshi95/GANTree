@@ -44,23 +44,25 @@ def conv2d(x, filters, name):
 
 def encoder(x, alpha=0.2, training=True):  # change
     with tf.variable_scope('encoder', reuse=tf.AUTO_REUSE):
-        # Input layer is 64x64x3
-        conv1 = conv2d(x, 64,name = 'conv1')
+        # Input layer is 32x32x1
+        conv1 = conv2d(x, 64, name='conv1')
         conv1 = tf.nn.leaky_relu(conv1, alpha)
         print conv1.shape
 
-        conv2 = conv2d(conv1, 128,name = 'conv2')
+        conv2 = conv2d(conv1, 128, name='conv2')
         conv2 = batch_norm(conv2, training=training)
         conv2 = tf.nn.leaky_relu(conv2, alpha)
         print conv2.shape
-        conv3 = conv2d(conv2, 256,name = 'conv3')
+
+        conv3 = conv2d(conv2, 256, name='conv3')
         conv3 = batch_norm(conv3, training=training)
         conv3 = tf.nn.leaky_relu(conv3, alpha)
         print conv3.shape
         # Flatten it
-        flat = tf.reshape(conv3, (-1, 4 * 4 * 512))
+        flat = tf.reshape(conv3, (-1, 4 * 4 * 256))
+        # print flat.shape
         z_reconstruct = dense(flat, 100)
-        print flat.shape
+        print 'z_recons  ', z_reconstruct.shape
         logits = dense(flat, 1)
         logits_reshape = tf.reshape(logits, [-1, H.logit_batch_size])
         entropy_logits = dense(logits_reshape, 1)
@@ -71,20 +73,20 @@ def encoder(x, alpha=0.2, training=True):  # change
 
 def decoder(z, output_dim=1, training=True):  # change
     with tf.variable_scope('decoder', reuse=tf.AUTO_REUSE):
-        fc1 = dense(z, 4 * 4 * 512)
+        fc1 = dense(z, 4 * 4 * 256)
 
-        fc1 = tf.reshape(fc1, (-1, 4, 4, 512))
+        fc1 = tf.reshape(fc1, (-1, 4, 4, 256))
         fc1 = batch_norm(fc1, training=training)
         fc1 = tf.nn.relu(fc1)
         # 4x4
         print fc1.shape
-        t_conv1 = transpose_conv2d(fc1, 256)
+        t_conv1 = transpose_conv2d(fc1, 128)
         t_conv1 = batch_norm(t_conv1, training=training)
         t_conv1 = tf.nn.relu(t_conv1)
         # 8x8
         print t_conv1.shape
 
-        t_conv2 = transpose_conv2d(t_conv1, 128)
+        t_conv2 = transpose_conv2d(t_conv1, 64)
         t_conv2 = batch_norm(t_conv2, training=training)
         t_conv2 = tf.nn.relu(t_conv2)
         # 16x16
@@ -92,13 +94,11 @@ def decoder(z, output_dim=1, training=True):  # change
 
         t_conv3 = transpose_conv2d(t_conv2, output_dim)
         # 32x32
-        print t_conv3
-
         gen_out = t_conv3
         print gen_out
 
         out = tf.tanh(gen_out)
-        return out  # 32x32x1
+        return gen_out  # 32x32x1
 
 
 def disc(x, training=True):  # change

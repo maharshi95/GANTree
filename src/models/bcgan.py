@@ -162,6 +162,9 @@ class Model(BaseModel):
             tf.summary.histogram('z_real', self.z_real),
             tf.summary.histogram('z_recon', self.z_recon),
 
+            tf.summary.image("Generated images",self.x_fake)
+            # tf.summary.image("")
+
             # tf.summary.histogram('fake_preds', self.disc_real_preds),
             # tf.summary.histogram('real_preds', self.disc_fake_preds),
         ]
