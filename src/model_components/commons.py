@@ -1,7 +1,7 @@
 from __future__ import division
 import numpy as np
 import tensorflow as tf
-from tensorflow.contrib import layers
+from tensorflow.contrib import slim
 
 
 def flatten(inputs):
@@ -31,31 +31,24 @@ def get_scaled_tanh(scale):
 def dense(inputs, num_outputs, activation_fn=tf.nn.relu):
     # type: (tf.Tensor, int, object) -> tf.Tensor
 
-    return layers.fully_connected(inputs, num_outputs, activation_fn)
+    return slim.fully_connected(inputs, num_outputs, activation_fn)
 
 
 def conv2d(inputs, num_filters, padding="SAME", kernel_size=5, stride=2, scope='conv2D'):
-    layers.conv2d(inputs, num_filters, kernel_size, stride, padding, activation_fn=None, scope=scope)
+    slim.conv2d(inputs, num_filters, kernel_size, stride, padding, activation_fn=None, scope=scope)
 
 
-def batch_norm(inputs, training, epsilon=1e-5, momentum=0.9):
-    return tf.layers.batch_normalization(inputs, training=training, epsilon=epsilon, momentum=momentum)
+def batch_norm(inputs, decay=0.9, is_training=True, epsilon=1e-5, *args, **kwargs):
+    return slim.batch_norm(inputs, decay=decay, is_training=is_training, epsilon=epsilon, *args, **kwargs)
 
 
 def dropout(inputs, keep_prob=0.5, noise_shape=None, training=True):
-    layers.dropout(inputs, keep_prob, noise_shape, is_training=training)
+    slim.dropout(inputs, keep_prob, noise_shape, is_training=training)
 
 
 def n_layers_dense(inputs, n_units, activations=None, name='n_layers_dense'):
-    n_layers = len(n_units)
     assert len(n_units) == len(activations)
-    with tf.variable_scope(name, reuse=tf.AUTO_REUSE):
-        next_layer = inputs
-        for i in range(n_layers):
-            scope = 'layer_%d' % i
-            act_fn = activations[i]
-            next_layer = layers.fully_connected(next_layer, n_units[i], activation_fn=act_fn, scope=scope)
-    return next_layer
+    return slim.stack(inputs, slim.fully_connected, zip(n_units, activations), scope=name)
 
 
 def resnet_block(inputs, apply_block_fn):
