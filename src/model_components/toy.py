@@ -5,6 +5,15 @@ from . import commons
 H = ExperimentContext.Hyperparams
 
 
+def z_transform(x, z_mean):
+    # [B, z_size]
+    return x - z_mean
+
+
+def z_inv_transform(x, z_mean):
+    return x + z_mean
+
+
 def encoder(x):
     with tf.variable_scope('encoder', reuse=tf.AUTO_REUSE):
         n_units = [128, 128, 64, 64, H.z_size]
@@ -37,13 +46,13 @@ def disc_v2(x):
         n_units = [64, 64, 128, 32]
         n_layers = len(n_units)
         act_fn = [tf.nn.elu] * n_layers
-        pre_logits = commons.n_layers_dense(x, n_units, act_fn, name='dense_1')
+        pre_logits = commons.n_layers_dense(x, n_units, act_fn, name='dense_block_1')
 
         sample_logits = commons.dense(pre_logits, 1, None)
 
         pre_logits_reshaped = tf.reshape(pre_logits, [-1, H.logit_batch_size * n_units[-1]])
         n_units_2 = [64, 32, 1]
         act_fn_2 = [tf.nn.elu, tf.nn.elu, None]
-        entropy_logits = commons.n_layers_dense(pre_logits_reshaped, n_units_2, act_fn_2, name='dense_2')
+        batch_logits = commons.n_layers_dense(pre_logits_reshaped, n_units_2, act_fn_2, name='dense_block_2')
 
-        return sample_logits, entropy_logits
+        return sample_logits, batch_logits

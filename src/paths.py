@@ -40,12 +40,14 @@ weights_dir_paths = {
 }
 
 
-def get_result_path(path):
-    return osp.join(results_base_dir, path)
+def get_result_path(path, model_name=None):
+    model_name = model_name or ''
+    return osp.join(results_base_dir, model_name, path)
 
 
-def get_temp_file_path(path):
-    return osp.join(temp_dir, path)
+def get_temp_file_path(path, model_name=None):
+    model_name = model_name or ''
+    return osp.join(temp_dir, model_name, path)
 
 
 def get_saved_params_path(dir_name, model_name, net_name, weight_label, iter_no):

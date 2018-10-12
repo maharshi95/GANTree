@@ -1,5 +1,6 @@
 from __future__ import division, print_function, absolute_import
 
+__doc__ = "Archived training algorithm for gan tree"
 import json
 import os, time, argparse, logging, traceback
 
@@ -100,10 +101,9 @@ if 'all' in args.delete or 'weights' in args.delete:
     model_utils.setup_dirs()
     print('')
 
-max_epochs = 10000
-
 n_step_console_log = 500
 n_step_tboard_log = 10
+max_epochs = 10000
 n_step_validation = 50
 n_step_iter_save = 5000
 n_step_visualize = 1000
@@ -170,6 +170,13 @@ def refresh_splits(node):
     x_train_splits, _ = node.split_x(X_splits[node.node_id])
     X_splits.update(x_train_splits)
     return x_train_splits
+
+
+def get_next_split(x_splits, ganset):
+    # type: (dict, GANSet) -> int
+    likelihoods = {gset[i].node_id: gset[i] for i in range(ganset.size)}
+    min_likelihood_node_id = min(likelihoods.keys(), key=lambda l: likelihoods[l])
+    return min_likelihood_node_id
 
 
 while node_train_iter < max_epochs:

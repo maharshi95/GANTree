@@ -11,9 +11,7 @@ def flatten(inputs):
     :param inputs: input Tensor
     :return: flattened Tensor
     """
-    batch_size = tf.shape(inputs)[0]
-    n_features = np.product(map(lambda x: x.value, inputs.shape[1:]))
-    return tf.reshape(inputs, (batch_size, n_features))
+    return slim.flatten(inputs)
 
 
 def scaled_tanh(x, scale=1.0):
@@ -34,7 +32,7 @@ def dense(inputs, num_outputs, activation_fn=tf.nn.relu):
     return slim.fully_connected(inputs, num_outputs, activation_fn)
 
 
-def conv2d(inputs, num_filters, padding="SAME", kernel_size=5, stride=2, scope='conv2D'):
+def conv2d(inputs, num_filters, kernel_size=5, stride=2, padding="SAME", scope='conv2D'):
     slim.conv2d(inputs, num_filters, kernel_size, stride, padding, activation_fn=None, scope=scope)
 
 
@@ -54,3 +52,11 @@ def n_layers_dense(inputs, n_units, activations=None, name='n_layers_dense'):
 def resnet_block(inputs, apply_block_fn):
     output = inputs + apply_block_fn(inputs)
     return output
+
+
+def rotate_left(X, deg):
+    theta = np.pi / 180.0 * deg
+    M = np.array([[np.cos(theta), -np.sin(theta)],
+                  [np.sin(theta), np.cos(theta)]])
+    M = tf.convert_to_tensor(M)
+    return tf.matmul(X, tf.transpose(M))
