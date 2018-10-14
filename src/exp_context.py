@@ -1,6 +1,6 @@
 from types import ModuleType
 from hyperparams.factory import HyperparamsFactory
-from models.factory import ModelFactory
+from models_tf.factory import ModelFactory
 
 
 class ExperimentContext:

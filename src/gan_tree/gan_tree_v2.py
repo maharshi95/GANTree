@@ -8,7 +8,7 @@ import tensorflow as tf
 from sklearn import mixture
 
 from exp_context import ExperimentContext
-from models.base_gtree import BaseModel
+from models_tf.base_gtree import BaseModel
 
 logger = logging.getLogger(__name__)
 

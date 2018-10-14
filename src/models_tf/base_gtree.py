@@ -1,6 +1,6 @@
 from __future__ import division, print_function
 import os, logging
-from models import base_infergan
+from models_tf import base_infergan
 
 import paths
 import tensorflow as tf

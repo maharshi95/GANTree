@@ -3,8 +3,9 @@ import logging
 import numpy as np
 import tensorflow as tf
 
-from model_components.mnist import encoder, decoder, disc
-from models.base import BaseModel
+from model_components import losses
+from model_components.toy import encoder, decoder, disc_v2
+from models_tf.base import BaseModel
 from exp_context import ExperimentContext
 
 H = ExperimentContext.Hyperparams
@@ -31,9 +32,9 @@ class Model(BaseModel):
 
         logger.info('%s: Model Definition complete' % repr(self))
 
-        logger.info('%s: Model Params:' % repr(self))
-        for param in tf.trainable_variables():
-            logger.info(param)
+        # logger.info('%s: Model Params:' % repr(self))
+        # for param in tf.trainable_variables(self.model_scope):
+        #     logger.info(param)
 
         self.__is_model_built = True
 
@@ -48,7 +49,7 @@ class Model(BaseModel):
             self.add_param_saver(network_name, param_list)
 
     def _define_placeholders(self):
-        self.ph_X = tf.placeholder(tf.float32, [None, H.input_height, H.input_width, H.input_channel])
+        self.ph_X = tf.placeholder(tf.float32, [None, H.input_size])
         self.ph_Z = tf.placeholder(tf.float32, [None, H.z_size])
         self.ph_plot_img = tf.placeholder(tf.float32, [None, None, None, 4])
 
@@ -56,55 +57,60 @@ class Model(BaseModel):
         with tf.variable_scope(self.model_scope, reuse=tf.AUTO_REUSE):
             # X - Z - X Iteration
             self.x_real = self.ph_X
-            self.out_real, self.logits_real, self.entropy_logits_real, self.z_real = encoder(self.x_real)  # ask
+            self.z_real = encoder(self.x_real)
             self.x_recon = decoder(self.z_real)
 
             # Z - X - Z Iteration
             self.z_rand = self.ph_Z
             self.x_fake = decoder(self.z_rand)
-            self.out_fake, self.logits_fake, self.entropy_logits_fake, self.z_recon = encoder(self.x_fake)  # ask
+            self.z_recon = encoder(self.x_fake)
 
             # Disc Iteration
-            # self.out_real,self.logits_real,_ = disc(self.x_real)
-            # self.out_fake,self.logits_fake,_ = disc(self.x_fake)
+            self.logits_real, self.entropy_logits_real = disc_v2(self.x_real)
+            self.logits_fake, self.entropy_logits_fake = disc_v2(self.x_fake)
 
-    def _define_losses(self):  # ask
-        smooth = 0.95
+    def _define_losses(self):
         batch_size = tf.shape(self.ph_X)[0]
-        self.x_recon_loss = tf.reduce_mean((self.x_real - self.x_recon) ** 2)
-        print('x_real', self.x_real.shape)
-        print('x_fake', self.x_recon.shape)
-        print('z_real', self.z_rand.shape)
-        print('z_fake', self.z_recon.shape)
+        logit_batch_size = tf.shape(self.entropy_logits_real)[0]
 
+        self.x_recon_loss = tf.reduce_mean((self.x_real - self.x_recon) ** 2)
         self.z_recon_loss = tf.reduce_mean((self.z_rand - self.z_recon) ** 2)
         # [B, 2]
-        logit_batch_size = tf.shape(self.entropy_logits_real)[0]
+
         real_entropy_labels = tf.ones([logit_batch_size, 1])
         fake_entropy_labels = tf.zeros([logit_batch_size, 1])
 
         real_labels = tf.ones([batch_size, 1])
         fake_labels = tf.zeros([batch_size, 1])
 
-        self.disc_batch_loss_real = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(labels=real_entropy_labels, logits=self.entropy_logits_real))
-        self.disc_batch_loss_fake = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(labels=fake_entropy_labels, logits=self.entropy_logits_fake))
+        self.disc_batch_loss_real = losses.sigmoid_cross_entropy_loss(real_entropy_labels, self.entropy_logits_real)
+        self.disc_batch_loss_fake = losses.sigmoid_cross_entropy_loss(fake_entropy_labels, self.entropy_logits_fake)
 
-        self.gen_batch_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(labels=real_entropy_labels, logits=self.entropy_logits_fake))
+        self.gen_batch_loss = losses.sigmoid_cross_entropy_loss(real_entropy_labels, self.entropy_logits_fake)
 
-        self.disc_sample_loss_real = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(labels=real_labels, logits=self.logits_real))
-        self.disc_sample_loss_fake = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(labels=fake_labels, logits=self.logits_fake))
+        self.disc_sample_loss_real = losses.sigmoid_cross_entropy_loss(real_labels, self.logits_real)
+        self.disc_sample_loss_fake = losses.sigmoid_cross_entropy_loss(fake_labels, self.logits_fake)
 
-        self.gen_sample_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(labels=real_labels, logits=self.logits_fake))
+        self.gen_sample_loss = losses.sigmoid_cross_entropy_loss(real_labels, self.logits_fake)
 
-        self.disc_loss_real = (self.disc_batch_loss_real + self.disc_sample_loss_real) / 2.0
-        self.disc_loss_fake = (self.disc_batch_loss_fake + self.disc_sample_loss_fake) / 2.0
-        self.gen_loss = (self.gen_batch_loss + self.gen_sample_loss) / 2.0
+        if H.train_sample_logits and H.train_batch_logits:
+            self.disc_loss_real = (self.disc_batch_loss_real + self.disc_sample_loss_real) / 2.0
+            self.disc_loss_fake = (self.disc_batch_loss_fake + self.disc_sample_loss_fake) / 2.0
+            self.gen_loss = (self.gen_batch_loss + self.gen_sample_loss) / 2.0
+
+        elif H.train_sample_logits:
+            self.disc_loss_real = self.disc_sample_loss_real
+            self.disc_loss_fake = self.disc_sample_loss_fake
+            self.gen_loss = self.gen_sample_loss
+
+        elif H.train_batch_logits:
+            self.disc_loss_real = self.disc_batch_loss_real
+            self.disc_loss_fake = self.disc_batch_loss_fake
+            self.gen_loss = self.gen_batch_loss
+
+        else:
+            logger.error('Logits Training set False for both sample and batch: Atleast one must be set True in Hyperparams')
+            raise Exception('Logits not set to train')
 
         self.encoder_loss = self.x_recon_loss + self.z_recon_loss
         self.decoder_loss = self.encoder_loss + 0 * self.gen_loss
@@ -123,19 +129,34 @@ class Model(BaseModel):
     def _define_scopes(self):
         self.encoder_scope = self.model_scope + '/encoder'
         self.decoder_scope = self.model_scope + '/decoder'
-        self.disc_scope = self.model_scope + '/encoder'
+        self.disc_scope = self.model_scope + '/disc'
 
     def _define_summaries(self):
         summaries_list = [
-            tf.summary.scalar('x_recon_loss', self.x_recon_loss),
-            tf.summary.scalar('z_recon_loss', self.z_recon_loss),
-            tf.summary.scalar('encoder_loss', self.encoder_loss),
+            tf.summary.scalar('recon_x_loss', self.x_recon_loss),
+            tf.summary.scalar('recon_z_loss', self.z_recon_loss),
+            tf.summary.scalar('recon_loss', self.encoder_loss),
+
             tf.summary.scalar('gen_loss', self.gen_loss),
+            tf.summary.scalar('gen_loss_batch', self.gen_batch_loss),
+            tf.summary.scalar('gen_loss_samples', self.gen_sample_loss),
+
             tf.summary.scalar('disc_loss', self.disc_loss),
+
+            tf.summary.scalar('disc_loss_sample_real', self.disc_sample_loss_real),
+            tf.summary.scalar('disc_loss_sample_fake', self.disc_sample_loss_fake),
+
+            tf.summary.scalar('disc_loss_batch_real', self.disc_batch_loss_real),
+            tf.summary.scalar('disc_loss_batch_fake', self.disc_batch_loss_fake),
+
+            tf.summary.scalar('disc_loss_real', self.disc_loss_real),
+            tf.summary.scalar('disc_loss_fake', self.disc_loss_fake),
+
             tf.summary.scalar('gen_acc', self.gen_acc),
+
             tf.summary.scalar('disc_acc', self.disc_acc),
-            tf.summary.scalar('disc_real_acc', self.disc_real_acc),
-            tf.summary.scalar('disc_fake_acc', self.disc_fake_acc),
+            tf.summary.scalar('disc_acc_real', self.disc_real_acc),
+            tf.summary.scalar('disc_acc_fake', self.disc_fake_acc),
 
             tf.summary.histogram('z_rand', self.z_rand),
             tf.summary.histogram('z_real', self.z_real),
@@ -152,20 +173,21 @@ class Model(BaseModel):
         self.add_param_group('encoder', tf.global_variables(self.model_scope + '/encoder'))
         self.add_param_group('decoder', tf.global_variables(self.model_scope + '/decoder'))
         self.add_param_group('autoencoder', self.param_groups['encoder'] + self.param_groups['decoder'])
+        self.add_param_group('disc', tf.global_variables(self.model_scope + '/disc'))
         self.add_param_group('all', tf.global_variables(self.model_scope))
 
     def _define_operations(self):
-        with tf.variable_scope(self.model_scope, reuse=tf.AUTO_REUSE):
-            autoencoder_trainable_params = tf.global_variables(self.encoder_scope) + tf.global_variables(self.decoder_scope)
-            opt = tf.train.AdamOptimizer(H.lr_autoencoder, beta1=H.beta1, beta2=H.beta2)
+        with tf.variable_scope('', reuse=tf.AUTO_REUSE):
+            autoencoder_trainable_params = tf.trainable_variables(self.encoder_scope) + tf.trainable_variables(self.decoder_scope)
+            opt = tf.train.RMSPropOptimizer(H.lr_autoencoder)
             self.autoencoder_train_op = opt.minimize(self.encoder_loss, var_list=autoencoder_trainable_params)
 
-            decoder_params = tf.global_variables(self.decoder_scope)
-            opt = tf.train.AdamOptimizer(H.lr_autoencoder, beta1=H.beta1, beta2=H.beta2)
+            decoder_params = tf.trainable_variables(self.decoder_scope)
+            opt = tf.train.RMSPropOptimizer(H.lr_autoencoder)
             self.adv_gen_train_op = opt.minimize(self.gen_loss, var_list=decoder_params)
 
-            disc_params = tf.global_variables(self.disc_scope)
-            opt = tf.train.AdamOptimizer(H.lr_autoencoder, beta1=H.beta1, beta2=H.beta2)
+            disc_params = tf.trainable_variables(self.disc_scope)
+            opt = tf.train.RMSPropOptimizer(H.lr_autoencoder)
             self.adv_disc_train_op = opt.minimize(self.disc_loss, var_list=disc_params)
 
     @property
@@ -235,10 +257,10 @@ class Model(BaseModel):
     def discriminate(self, x_batch, split=True):
         preds = self.session.run(self.disc_real_preds, {
             self.ph_X: x_batch
-        })
+        })[:, 0]
         if split:
-            x_batch_real = x_batch[np.where(preds == 0)]
-            x_batch_fake = x_batch[np.where(preds == 1)]
+            x_batch_real = x_batch[np.where(preds == 1)]
+            x_batch_fake = x_batch[np.where(preds == 0)]
             return preds, x_batch_real, x_batch_fake
         else:
             return preds

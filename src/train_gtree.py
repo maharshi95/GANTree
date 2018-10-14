@@ -39,7 +39,7 @@ from utils import viz_utils, np_utils
 from utils import bash_utils, model_utils
 from dataloaders.factory import DataLoaderFactory
 
-from models.base import BaseModel
+from models_tf.base import BaseModel
 from gan_tree import gan_tree
 
 gpu_idx = str(args.gpu)

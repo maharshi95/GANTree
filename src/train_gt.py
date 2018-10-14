@@ -48,7 +48,7 @@ print(dir(np_utils))
 from utils import bash_utils, model_utils
 from dataloaders.factory import DataLoaderFactory
 
-from models.bcgnode import BaseModel
+from models_tf.bcgnode import BaseModel
 from gan_tree.gan_tree_v2 import GANSet
 from gan_tree import gan_tree_v2 as gan_tree
 

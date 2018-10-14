@@ -5,7 +5,7 @@ import tensorflow as tf
 
 from model_components import losses
 from model_components.toy import encoder, decoder, disc_v2
-from models.base import BaseModel
+from models_tf.base import BaseModel
 from exp_context import ExperimentContext
 
 H = ExperimentContext.Hyperparams
@@ -162,6 +162,9 @@ class Model(BaseModel):
             tf.summary.histogram('z_real', self.z_real),
             tf.summary.histogram('z_recon', self.z_recon),
 
+            tf.summary.image("Generated images",self.x_fake)
+            # tf.summary.image("")
+
             # tf.summary.histogram('fake_preds', self.disc_real_preds),
             # tf.summary.histogram('real_preds', self.disc_fake_preds),
         ]
@@ -230,9 +233,6 @@ class Model(BaseModel):
             self.ph_Z: z_input,
         })
         return network_outputs
-
-    def run(self, fetches, feed_dict=None, options=None, run_metadata=None):
-        return self.session.run(fetches, feed_dict, options, run_metadata)
 
     def encode(self, x_batch):
         return self.session.run(self.z_real, {

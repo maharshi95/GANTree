@@ -5,7 +5,7 @@ import tensorflow as tf
 
 from model_components import losses
 from model_components.toy import encoder, decoder, disc_v2, z_transform, z_inv_transform
-from models.base_gtree import BaseModel
+from models_tf.base_gtree import BaseModel
 from exp_context import ExperimentContext
 
 H = ExperimentContext.Hyperparams

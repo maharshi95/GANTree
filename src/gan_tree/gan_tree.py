@@ -5,7 +5,7 @@ from scipy import stats
 import tensorflow as tf
 from sklearn import mixture
 from exp_context import ExperimentContext
-from models.base import BaseModel
+from models_tf.base import BaseModel
 
 
 class GNode(object):
