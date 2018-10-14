@@ -107,3 +107,25 @@ class ToyGAN(nn.Module):
         self.opt['decoder'].step()
 
         return c_loss
+
+    def x_clf_loss(self, z1, z2, means1, means2, cov1, cov2):
+        f1 = tr.distributions.MultivariateNormal(means1, cov1)
+        f2 = tr.distributions.MultivariateNormal(means2, cov2)
+
+        loss = (f1.log_prob(z1) - f2.log_prob(z1)).mean() + (f2.log_prob(z2) - f1.log_prob(z2)).mean()
+
+        return loss
+
+    def step_train_encoder(self, x1, x2, means1, means2, cov1, cov2):
+        z1 = self.encoder(x1)
+        z2 = self.encoder(x2)
+
+        clf_loss = self.x_clf_loss(z1, z2, means1, means2, cov1, cov2)
+        self.opt['encoder'].zero_grad()
+        clf_loss.backward()
+
+        self.opt['encoder'].step()
+
+        return clf_loss
+
+
