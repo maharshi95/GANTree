@@ -22,8 +22,9 @@ train_data = ''
 test_data = ''
 
 
-def log_writer_path(writer_name):
-    return osp.join(logs_base_dir, writer_name)
+def log_writer_path(writer_name, model_name=None):
+    model_name = model_name or ''
+    return osp.join(logs_base_dir, model_name, writer_name)
 
 
 all_weights_dir = osp.join(weights_base_dir, 'all/')
@@ -39,12 +40,14 @@ weights_dir_paths = {
 }
 
 
-def get_result_path(path):
-    return osp.join(results_base_dir, path)
+def get_result_path(path, model_name=None):
+    model_name = model_name or ''
+    return osp.join(results_base_dir, model_name, path)
 
 
-def get_temp_file_path(path):
-    return osp.join(temp_dir, path)
+def get_temp_file_path(path, model_name=None):
+    model_name = model_name or ''
+    return osp.join(temp_dir, model_name, path)
 
 
 def get_saved_params_path(dir_name, model_name, net_name, weight_label, iter_no):

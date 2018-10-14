@@ -1,7 +1,6 @@
 from __future__ import division, print_function, absolute_import
 import os, time, argparse, logging, traceback
 
-import numpy as np
 import matplotlib
 
 matplotlib.use('Agg')

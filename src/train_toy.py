@@ -7,7 +7,6 @@ import numpy as np
 import matplotlib
 
 matplotlib.use('Agg')
-import numpy as np
 from matplotlib import pyplot as plt
 from exp_context import ExperimentContext
 
@@ -120,12 +119,33 @@ count_gen_iter = 0
 count_disc_iter = 0
 
 
-class Networks:
-    gen = 0
-    disc = 1
+def get_x_plots_data(x_input):
+    _, x_real_true, x_real_false = model.discriminate(x_input)
+
+    z_real_true = model.encode(x_real_true)
+    z_real_false = model.encode(x_real_false)
+
+    x_recon = model.reconstruct_x(x_input)
+    _, x_recon_true, x_recon_false = model.discriminate(x_recon)
+
+    z_recon_true = model.encode(x_recon_true)
+    z_recon_false = model.encode(x_recon_false)
+
+    return [
+        (x_real_true, x_real_false),
+        (z_real_true, z_real_false),
+        (x_recon_true, x_recon_false),
+        (z_recon_true, z_recon_false)
+    ]
 
 
-turn = Networks.gen
+def get_z_plots_data(z_input):
+    x_input = model.decode(z_input)
+    x_plots = get_x_plots_data(x_input)
+    return [z_input] + x_plots[:-1]
+
+
+train_generator = False
 
 while iter_no < max_epochs:
     iter_no += 1
@@ -136,8 +156,8 @@ while iter_no < max_epochs:
 
     np.random.shuffle(x_train)
 
-    z_train = dl.get_z_dist(x_train.shape[0], dist_type=H.z_dist_type)
-    z_test = dl.get_z_dist(x_test.shape[0], dist_type=H.z_dist_type)
+    z_train = dl.get_z_dist(x_train.shape[0], dist_type=H.z_dist_type, bounds=H.z_bounds)
+    z_test = dl.get_z_dist(x_test.shape[0], dist_type=H.z_dist_type, bounds=H.z_bounds)
 
     train_inputs = x_train, z_train
     test_inputs = x_test, z_test
@@ -145,7 +165,7 @@ while iter_no < max_epochs:
     if H.train_autoencoder:
         model.step_train_autoencoder(train_inputs)
 
-    if (turn == Networks.gen):
+    if train_generator:
         count_gen_iter += 1
         if H.train_generator_adv:
             model.step_train_adv_generator(train_inputs)
@@ -153,19 +173,21 @@ while iter_no < max_epochs:
         count_disc_iter += 1
         model.step_train_discriminator(train_inputs)
 
-    if count_gen_iter == H.gen_iter_count:
-        count_gen_iter = 0
-        turn = Networks.disc
-
-    elif count_disc_iter == H.disc_iter_count:
-        count_disc_iter = 0
-        turn = Networks.gen
-
-    if (n_step_generator_decay > 0 and iter_no % n_step_generator_decay) == 0:
-        n_step_generator = max(n_step_generator - 1, 1)
-
+    # Train Losses Computation
     train_losses = model.compute_losses(train_inputs, model.network_loss_variables)
-    #
+    gen_accuracy = train_losses[2]
+    disc_accuracy = train_losses[1]
+
+    # Switch Training Networks
+    if train_generator and (count_gen_iter == H.gen_iter_count or gen_accuracy >= 70):
+        count_gen_iter = 0
+        train_generator = False
+
+    if not train_generator and (count_disc_iter == H.disc_iter_count or disc_accuracy >= 95):
+        count_disc_iter = 0
+        train_generator = True
+
+    # Console Log
     if iter_no % n_step_console_log == 0:
         print('Step %i: Encoder Loss: %f' % (iter_no, train_losses[0]))
         print('Step %i: Disc Acc: %f' % (iter_no, train_losses[1]))
@@ -173,43 +195,21 @@ while iter_no < max_epochs:
         print('Step %i: x_recon Loss: %f' % (iter_no, train_losses[3]))
         print('Step %i: z_recon Loss: %f' % (iter_no, train_losses[4]))
 
+    # Tensorboard Log
     if iter_no % n_step_tboard_log == 0:
         model.get_logger('train').add_summary(train_losses[-1], iter_no)
 
+    # Validation Computations
     if iter_no % n_step_validation == 0:
         test_losses = model.compute_losses(test_inputs, model.network_loss_variables)
         model.get_logger('test').add_summary(test_losses[-1], iter_no)
 
+    # Weights Saving
     if iter_no % n_step_iter_save == 0:
         model.save_params(iter_no=iter_no)
 
+    # Visualizations
     if H.show_visual_while_training and (iter_no % n_step_visualize == 0 or (iter_no < n_step_visualize and iter_no % 200 == 0)):
-        def get_x_plots_data(x_input):
-            _, x_real_true, x_real_false = model.discriminate(x_input)
-
-            z_real_true = model.encode(x_real_true)
-            z_real_false = model.encode(x_real_false)
-
-            x_recon = model.reconstruct_x(x_input)
-            _, x_recon_true, x_recon_false = model.discriminate(x_recon)
-
-            z_recon_true = model.encode(x_recon_true)
-            z_recon_false = model.encode(x_recon_false)
-
-            return [
-                (x_real_true, x_real_false),
-                (z_real_true, z_real_false),
-                (x_recon_true, x_recon_false),
-                (z_recon_true, z_recon_false)
-            ]
-
-
-        def get_z_plots_data(z_input):
-            x_input = model.decode(z_input)
-            x_plots = get_x_plots_data(x_input)
-            return [z_input] + x_plots[:-1]
-
-
         x_full = dl.get_full_space()
 
         x_plots_row1 = get_x_plots_data(x_test)
@@ -226,6 +226,7 @@ while iter_no < max_epochs:
 
     iter_time_end = time.time()
 
+    # Logging Iteration execution time and Tensorboard link
     if iter_no % n_step_console_log == 0:
         print('Single Iter Time: %.4f' % (iter_time_end - iter_time_start))
         print('Tensorboard Logs: http://{}:{}'.format(tensorboard_ip, tensorboard_port))

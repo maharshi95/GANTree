@@ -1,6 +1,50 @@
 import numpy as np
 
 from dataloaders.base import BaseDataLoader
+from utils import np_utils
+
+
+class GaussianDataLoader(BaseDataLoader):
+
+    def __init__(self, input_size=1, latent_size=1, train_batch_size=32, test_batch_size=32):
+        super(GaussianDataLoader, self).__init__(input_size, latent_size)
+
+        train_data, test_data = self.get_data()
+
+        np.random.shuffle(train_data)
+        np.random.shuffle(test_data)
+
+        self.batch_size = {
+            'train': train_batch_size,
+            'test': test_batch_size
+        }
+
+        self.data = {
+            'train': train_data,
+            'test': test_data
+        }
+
+        self.n_batches = {
+            split: self.data[split].shape[0] // self.batch_size[split]
+            for split in ['train', 'test']
+        }
+
+        self.batch_index = {
+            'train': 0,
+            'test': 0
+        }
+
+    def next_batch(self, split):
+        start = self.batch_index[split] * self.batch_size[split]
+        end = start + self.batch_size[split]
+        self.batch_index[split] = (self.batch_size[split] + 1) % self.n_batches[split]
+
+        if split == 'train' and self.batch_index[split] == 0:
+            np.random.shuffle(self.data[split])
+
+        data = self.data[split][start: end]
+
+        return data
 
 
 class TwoGaussiansDataLoader(BaseDataLoader):
@@ -15,6 +59,63 @@ class TwoGaussiansDataLoader(BaseDataLoader):
 
         X = np.concatenate([X1, X2])
         np.random.shuffle(X)
+
+        n_train = int(train_ratio * X.shape[0])
+
+        training, test = X[:n_train, :], X[n_train:, :]
+
+        return training, test
+
+
+def generate_multi_gaussian_samples(means, cov, ratio, num_samples):
+    X = []
+    count_samples = 0
+    for i in range(4):
+        if i < 3:
+            n_samples = int(ratio[i] * num_samples)
+            count_samples += n_samples
+        else:
+            n_samples = num_samples - count_samples
+        samples = np.random.multivariate_normal(np.array(means[i]), cov=np.eye(means.shape[-1]) * cov[i], size=n_samples)
+        X.append(samples)
+
+    X = np.concatenate(X)
+    np.random.shuffle(X)
+    return X
+
+
+class FourGaussiansDataLoader(BaseDataLoader):
+    def __init__(self, input_size=1, latent_size=1):
+        super(FourGaussiansDataLoader, self).__init__(input_size, latent_size)
+
+    def get_data(self, train_ratio=0.6):
+        num_samples = 20000
+
+        mu = np.array([[2, 2], [-1, -1], [-2, 2], [1, -1]])
+        sigma = np.array([0.19, 0.09, 0.02, 0.07])
+        ratio = np_utils.prob_dist([7, 3, 2, 5])
+
+        X = generate_multi_gaussian_samples(means=mu, cov=sigma, ratio=ratio, num_samples=num_samples)
+
+        n_train = int(train_ratio * X.shape[0])
+
+        training, test = X[:n_train, :], X[n_train:, :]
+
+        return training, test
+
+
+class FourSymGaussiansDataLoader(BaseDataLoader):
+    def __init__(self, input_size=1, latent_size=1):
+        super(FourSymGaussiansDataLoader, self).__init__(input_size, latent_size)
+
+    def get_data(self, train_ratio=0.6):
+        num_samples = 20000
+
+        mu = np.array([[2, 2], [-2, -2], [-2, 2], [2, -2]])
+        sigma = np.array([0.1, 0.1, 0.1, 0.1])
+        ratio = np_utils.prob_dist([1, 1, 1, 1])
+
+        X = generate_multi_gaussian_samples(means=mu, cov=sigma, ratio=ratio, num_samples=num_samples)
 
         n_train = int(train_ratio * X.shape[0])
 

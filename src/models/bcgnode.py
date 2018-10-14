@@ -1,11 +1,11 @@
-# Autoencoder
-import logging
+from __future__ import print_function, division
+import os, logging
 import numpy as np
 import tensorflow as tf
 
 from model_components import losses
-from model_components.toy import encoder, decoder, disc_v2
-from models.base import BaseModel
+from model_components.toy import encoder, decoder, disc_v2, z_transform, z_inv_transform
+from models.base_gtree import BaseModel
 from exp_context import ExperimentContext
 
 H = ExperimentContext.Hyperparams
@@ -16,8 +16,10 @@ logging.basicConfig(level=logging.INFO)
 
 class Model(BaseModel):
 
-    def __init__(self, model_name, session=None):
-        BaseModel.__init__(self, model_name, session)
+    def __init__(self, model_name, session=None, model_scope=None, shared_scope="", z_mean=0.0, z_cov=None):
+        BaseModel.__init__(self, model_name, session, model_scope, shared_scope)
+        self.z_mean = z_mean
+        self.z_cov = z_cov
         self.__is_model_built = False
 
     def build(self):
@@ -32,18 +34,21 @@ class Model(BaseModel):
 
         logger.info('%s: Model Definition complete' % repr(self))
 
-        # logger.info('%s: Model Params:' % repr(self))
-        # for param in tf.trainable_variables(self.model_scope):
-        #     logger.info(param)
+        logger.info('%s: # Private Params       : %d' % (repr(self), len(self.param_groups['private'])))
+        logger.info('%s: # Shared Params        : %d' % (repr(self), len(self.param_groups['shared'])))
+        logger.info('%s: # Non Trainable Params : %d' % (repr(self), len(self.param_groups['non_trainable'])))
+        model_params = tf.trainable_variables(self.model_scope)
+        for param in sorted(model_params, key=lambda x: x.name):
+            logger.debug(param)
 
         self.__is_model_built = True
 
-    def initiate_service(self):
+    def initiate_service(self, **kwargs):
         if not self.__is_model_built:
             logger.error('Model Service Initiation Error: Trying to initiate service before building the model.')
             logger.error('execute model.build() before model.initiate_service()')
             raise Exception('Model Service Initiation Error: Trying to initiate service before building the model.')
-        BaseModel.initiate_service(self)
+        BaseModel.initiate_service(self, **kwargs)
 
         for network_name, param_list in self.param_groups.items():
             self.add_param_saver(network_name, param_list)
@@ -54,17 +59,27 @@ class Model(BaseModel):
         self.ph_plot_img = tf.placeholder(tf.float32, [None, None, None, 4])
 
     def _define_network_graph(self):
-        with tf.variable_scope(self.model_scope, reuse=tf.AUTO_REUSE):
+        self.x_real = self.ph_X
+        self.z_rand = self.ph_Z
+
+        with tf.variable_scope(self.shared_scope, reuse=tf.AUTO_REUSE):
             # X - Z - X Iteration
-            self.x_real = self.ph_X
             self.z_real = encoder(self.x_real)
-            self.x_recon = decoder(self.z_real)
+            self.z_real_transformed = z_transform(self.z_real, self.z_mean)
 
+        with tf.variable_scope(self.private_scope, reuse=tf.AUTO_REUSE):
+            # X - Z - X Iteration
+            self.x_recon = decoder(self.z_real_transformed)
             # Z - X - Z Iteration
-            self.z_rand = self.ph_Z
-            self.x_fake = decoder(self.z_rand)
-            self.z_recon = encoder(self.x_fake)
+            self.z_rand_transformed = z_transform(self.z_rand, self.z_mean)
+            self.x_fake = decoder(self.z_rand_transformed)
 
+        with tf.variable_scope(self.shared_scope, reuse=tf.AUTO_REUSE):
+            # Z - X - Z Iteration
+            self.z_recon = encoder(self.x_fake)
+            self.z_recon_transformed = z_transform(self.z_recon, self.z_mean)
+
+        with tf.variable_scope(self.private_scope, reuse=tf.AUTO_REUSE):
             # Disc Iteration
             self.logits_real, self.entropy_logits_real = disc_v2(self.x_real)
             self.logits_fake, self.entropy_logits_fake = disc_v2(self.x_fake)
@@ -127,60 +142,71 @@ class Model(BaseModel):
         self.gen_acc = 100 - self.disc_fake_acc
 
     def _define_scopes(self):
-        self.encoder_scope = self.model_scope + '/encoder'
-        self.decoder_scope = self.model_scope + '/decoder'
-        self.disc_scope = self.model_scope + '/disc'
+        self.encoder_scope = self.shared_scope + '/encoder'
+        self.decoder_scope = self.private_scope + '/decoder'
+        self.disc_scope = self.private_scope + '/disc'
 
     def _define_summaries(self):
-        summaries_list = [
-            tf.summary.scalar('recon_x_loss', self.x_recon_loss),
-            tf.summary.scalar('recon_z_loss', self.z_recon_loss),
-            tf.summary.scalar('recon_loss', self.encoder_loss),
+        with tf.variable_scope(self.scope):
+            summaries_list = [
+                tf.summary.scalar('recon_x_loss', self.x_recon_loss),
+                tf.summary.scalar('recon_z_loss', self.z_recon_loss),
+                tf.summary.scalar('recon_loss', self.encoder_loss),
 
-            tf.summary.scalar('gen_loss', self.gen_loss),
-            tf.summary.scalar('gen_loss_batch', self.gen_batch_loss),
-            tf.summary.scalar('gen_loss_samples', self.gen_sample_loss),
+                tf.summary.scalar('gen_loss', self.gen_loss),
+                tf.summary.scalar('gen_loss_batch', self.gen_batch_loss),
+                tf.summary.scalar('gen_loss_samples', self.gen_sample_loss),
 
-            tf.summary.scalar('disc_loss', self.disc_loss),
+                tf.summary.scalar('disc_loss', self.disc_loss),
 
-            tf.summary.scalar('disc_loss_sample_real', self.disc_sample_loss_real),
-            tf.summary.scalar('disc_loss_sample_fake', self.disc_sample_loss_fake),
+                tf.summary.scalar('disc_loss_sample_real', self.disc_sample_loss_real),
+                tf.summary.scalar('disc_loss_sample_fake', self.disc_sample_loss_fake),
 
-            tf.summary.scalar('disc_loss_batch_real', self.disc_batch_loss_real),
-            tf.summary.scalar('disc_loss_batch_fake', self.disc_batch_loss_fake),
+                tf.summary.scalar('disc_loss_batch_real', self.disc_batch_loss_real),
+                tf.summary.scalar('disc_loss_batch_fake', self.disc_batch_loss_fake),
 
-            tf.summary.scalar('disc_loss_real', self.disc_loss_real),
-            tf.summary.scalar('disc_loss_fake', self.disc_loss_fake),
+                tf.summary.scalar('disc_loss_real', self.disc_loss_real),
+                tf.summary.scalar('disc_loss_fake', self.disc_loss_fake),
 
-            tf.summary.scalar('gen_acc', self.gen_acc),
+                tf.summary.scalar('gen_acc', self.gen_acc),
 
-            tf.summary.scalar('disc_acc', self.disc_acc),
-            tf.summary.scalar('disc_acc_real', self.disc_real_acc),
-            tf.summary.scalar('disc_acc_fake', self.disc_fake_acc),
+                tf.summary.scalar('disc_acc', self.disc_acc),
+                tf.summary.scalar('disc_acc_real', self.disc_real_acc),
+                tf.summary.scalar('disc_acc_fake', self.disc_fake_acc),
 
-            tf.summary.histogram('z_rand', self.z_rand),
-            tf.summary.histogram('z_real', self.z_real),
-            tf.summary.histogram('z_recon', self.z_recon),
+                tf.summary.histogram('z_rand', self.z_rand),
+                tf.summary.histogram('z_real', self.z_real),
+                tf.summary.histogram('z_recon', self.z_recon),
 
-            tf.summary.image("Generated images",self.x_fake)
-            # tf.summary.image("")
+                # tf.summary.image("images_gen", self.x_fake)
+                # tf.summary.image("")
 
-            # tf.summary.histogram('fake_preds', self.disc_real_preds),
-            # tf.summary.histogram('real_preds', self.disc_fake_preds),
-        ]
+                # tf.summary.histogram('fake_preds', self.disc_real_preds),
+                # tf.summary.histogram('real_preds', self.disc_fake_preds),
+            ]
 
-        self.summaries = tf.summary.merge(summaries_list)
-        self.img_summary = tf.summary.image('viz_plots', self.ph_plot_img)
+            self.summaries = tf.summary.merge(summaries_list)
+            self.img_summary = tf.summary.image('viz_plots', self.ph_plot_img)
 
     def _create_param_groups(self):
-        self.add_param_group('encoder', tf.global_variables(self.model_scope + '/encoder'))
-        self.add_param_group('decoder', tf.global_variables(self.model_scope + '/decoder'))
+        self.add_param_group('encoder', tf.global_variables(self.encoder_scope))
+        self.add_param_group('decoder', tf.global_variables(self.decoder_scope))
         self.add_param_group('autoencoder', self.param_groups['encoder'] + self.param_groups['decoder'])
-        self.add_param_group('disc', tf.global_variables(self.model_scope + '/disc'))
-        self.add_param_group('all', tf.global_variables(self.model_scope))
+        self.add_param_group('disc', tf.global_variables(self.disc_scope))
+
+        self.add_param_group('shared', tf.global_variables(self.shared_scope))
+        self.add_param_group('private', tf.global_variables(self.private_scope))
+
+        self.add_param_group('shared_trainable', tf.trainable_variables(self.shared_scope))
+        self.add_param_group('private_trainable', tf.trainable_variables(self.private_scope))
+
+        self.add_param_group('trainable', self.param_groups['shared_trainable'] + self.param_groups['private_trainable'])
+        self.add_param_group('all', self.param_groups['shared'] + self.param_groups['private'])
+
+        self.add_param_group('non_trainable', list(set(self.param_groups['all']) - set(self.param_groups['trainable'])))
 
     def _define_operations(self):
-        with tf.variable_scope('', reuse=tf.AUTO_REUSE):
+        with tf.variable_scope(self.private_scope, reuse=tf.AUTO_REUSE):
             autoencoder_trainable_params = tf.trainable_variables(self.encoder_scope) + tf.trainable_variables(self.decoder_scope)
             opt = tf.train.RMSPropOptimizer(H.lr_autoencoder)
             self.autoencoder_train_op = opt.minimize(self.encoder_loss, var_list=autoencoder_trainable_params)
@@ -214,17 +240,19 @@ class Model(BaseModel):
 
     def step_train_adv_generator(self, inputs):
         x_input, z_input = inputs
-        self.session.run(self.adv_gen_train_op, feed_dict={
+        _, disc_acc, gen_acc = self.session.run([self.adv_gen_train_op, self.disc_acc, self.gen_acc], feed_dict={
             self.ph_X: x_input,
             self.ph_Z: z_input,
         })
+        return disc_acc, gen_acc
 
     def step_train_discriminator(self, inputs):
         x_input, z_input = inputs
-        self.session.run(self.adv_disc_train_op, feed_dict={
+        _, disc_acc, gen_acc = self.session.run([self.adv_disc_train_op, self.disc_acc, self.gen_acc], feed_dict={
             self.ph_X: x_input,
             self.ph_Z: z_input,
         })
+        return disc_acc, gen_acc
 
     def compute_losses(self, inputs, losses):
         x_input, z_input = inputs

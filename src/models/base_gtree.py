@@ -1,39 +1,53 @@
-import os
-import logging
+from __future__ import division, print_function
+import os, logging
+from models import base_infergan
+
 import paths
-from abc import ABCMeta, abstractmethod
 import tensorflow as tf
+
+from abc import ABCMeta, abstractmethod
 from tensorflow.contrib import framework as tf_framework
 
 logger = logging.getLogger(__name__)
 
 
-class BaseModel():
+class BaseModel(base_infergan.BaseModel):
     __metaclass__ = ABCMeta
 
-    def __init__(self, model_name, session=None):
+    def __init__(self, model_name, session=None, model_scope=None, shared_scope=""):
         self.model_name = model_name
+        self.model_scope = model_name if model_scope is None else model_scope
+        self.shared_scope = shared_scope
         # Weight Savers and Loaders
         self.param_groups = {}
         self.loggers = {}
 
         self.param_savers = {}
         self.weights_path = {}
+        self.summary_nodes = {}
         self.session = session
+
+    @property
+    def name(self):
+        return self.model_name
+
+    @property
+    def scope(self):
+        return self.model_scope
+
+    @property
+    def private_scope(self):
+        return self.model_scope + '/private'
 
     def __repr__(self):
         return ('Model[%s]' % self.model_name)
-
-    @property
-    def model_scope(self):
-        return self.model_name
 
     @abstractmethod
     def build(self):
         return NotImplemented
 
     @abstractmethod
-    def initiate_service(self):
+    def initiate_service(self, initialize_shared_variables=False):
         """
         Override this function in the subclass and make sure to call this method from the overridden method.
         Summary Writers, Weight Savers will all be initiatized in this function after the build() function has been called.
@@ -45,21 +59,28 @@ class BaseModel():
 
             self.session = tf.Session(config=config)
 
-        init = tf.variables_initializer(tf.global_variables(self.model_name))
-        self.session.run(init)
-        local_params = tf.local_variables(self.model_name)
-        local = tf.variables_initializer(local_params)
-        self.session.run(local)
-        uninit_var = tf.report_uninitialized_variables()
-        uninit_var = self.session.run(uninit_var)
+        global_private_var_init_op = tf.variables_initializer(tf.global_variables(self.private_scope))
+        global_shared_var_init_op = tf.variables_initializer(tf.global_variables(self.shared_scope))
+        local_var_init_op = tf.variables_initializer(tf.local_variables(self.private_scope))
+
+        var_init_ops = [global_private_var_init_op, local_var_init_op]
+
+        if initialize_shared_variables:
+            logger.info('Initializing shared variables at %s of %s' % (self.shared_scope, self))
+            var_init_ops.append(global_shared_var_init_op)
+
+        self.session.run(var_init_ops)
+
+        uninit_var = self.session.run(tf.report_uninitialized_variables())
 
         if len(uninit_var) > 0:
-            print 'uninit var: '
-            for i in uninit_var:
-                print i
+            logger.warning('Found %d uninitialized variables: ' % len(uninit_var))
+            for var in uninit_var:
+                print(var)
+            print('')
 
         for name in ['train', 'test']:
-            self.add_logger(name, paths.log_writer_path(name))
+            self.add_logger(name, paths.log_writer_path(name, self.name))
 
     @property
     def network_names(self):
@@ -106,17 +127,34 @@ class BaseModel():
         self.param_savers[param_group].save(self.session, weights_path, global_step=iter_no)
 
     def load_params_from_model(self, parent_model):
-        parent_model_param_values = parent_model.get_all_param_values()
-        all_new_variable_names = map(lambda v: v.name[:-2], tf.trainable_variables(self.model_name))
+        # type: (BaseModel) -> None
+        logger.info('Loading Weights from %s to %s' % (parent_model.name, self.name))
+        parent_model_param_values = parent_model.get_all_param_values(private_only=False, trainable_only=True)
+        new_model_params = self.get_params(private_only=False, trainable_only=True)
+        new_variable_names = map(lambda v: v.name[:-2], new_model_params)
+
+        # logger.info('new variables in %s' % parent_model.name)
+        # for var_name in new_variable_names:
+        #     logger.info(var_name)
+
+        variable_load_ops = []
 
         with tf.variable_scope("", reuse=True):
             for parent_var_name in parent_model_param_values:
-                new_variable_name = parent_var_name.replace(parent_model.model_name, self.model_name)
-                if new_variable_name not in all_new_variable_names:
+                if 'private' in parent_var_name:  # Getting new name for private variable of model
+                    new_variable_name = parent_var_name.replace(parent_model.model_name, self.model_name)
+                else:  # Getting new name for shared variable of the model
+                    tokens = parent_var_name.split('/')
+                    shared_var_group_tag = tokens[tokens.index('shared') + 1]
+                    new_variable_name = parent_var_name.replace(shared_var_group_tag, parent_model.model_name)
+                if new_variable_name not in new_variable_names:
                     logger.warning('Oops!, {} not in var list'.format(new_variable_name))
                 var_value = parent_model_param_values[parent_var_name]
-                new_variable = tf.get_variable(new_variable_name)
-                new_variable.load(var_value, self.session)
+                new_variable = tf.get_variable(new_variable_name)  # type: tf.Variable
+                load_op = tf.assign(new_variable, var_value, name='Variable_Load_%s' % new_variable_name)
+                variable_load_ops.append(load_op)
+        self.session.run(variable_load_ops)
+        return
 
     def load_params_from_checkpoints(self, dir_name='all', param_group='all', tag='iter', iter_no=None):
         param_saver = self.get_param_saver(param_group)
@@ -151,7 +189,8 @@ class BaseModel():
                     logger.warning('Oops!, {} not in var list'.format(new_variable_name))
                 print(new_variable_name)
                 if 'RMSProp' in new_variable_name:
-                    print 'ignoreing...'
+                    print()
+                    'ignoring...'
                     continue
                 var_value = tf_framework.load_variable(weights_path, old_var_name)
                 new_variable = tf.get_variable(new_variable_name)
@@ -164,37 +203,41 @@ class BaseModel():
         ])
         self.loggers[logger_name].add_summary(summary, global_step=iter_no)
 
-    def get_all_param_values(self):
-        param_values = {}
-        params = tf.trainable_variables(self.model_name)
+    def log_new_summary(self, logger_name, tag, simple_value, iter_no):
+        if tag not in self.summary_nodes:
+            self.summary_nodes[tag] = tf.summary.scalar(tag, tf.convert_to_tensor(simple_value))
+
+        summary = self.session.run(self.summary_nodes[tag])
+
+        self.loggers[logger_name].add_summary(summary, global_step=iter_no)
+
+    def get_params(self, private_only, trainable_only):
+        params = {
+            True: {
+                True: self.param_groups['private_trainable'],
+                False: self.param_groups['private'],
+            },
+            False: {
+                True: self.param_groups['trainable'],
+                False: self.param_groups['all']
+            }}[private_only][trainable_only]
+        return params
+
+    def get_all_param_values(self, private_only=True, trainable_only=True):
+        """
+        Fetches a python dict of type {parameter_name (str): parameter_value (float)}
+        having parameter name as key and its current value as the value in dict.
+        :param private_only: If true, only fetches the private variables of that model,
+                              else fetches the shared (with some other model) params as well
+        """
+        param_values_dict = {}
+        # scope = self.private_scope if private_only else self.model_scope
+        # params = tf.trainable_variables(scope) if trainable_only else tf.global_variables(scope)
+        params = self.get_params(private_only, trainable_only)
         values = self.session.run(params)
         for param, value in zip(params, values):
-            param_values[param.name[:-2]] = value
-        return param_values
-
-    @abstractmethod
-    def step_train_autoencoder(self, inputs):
-        return NotImplemented
-
-    @abstractmethod
-    def step_train_adv_generator(self, inputs):
-        return NotImplemented
-
-    @abstractmethod
-    def step_train_discriminator(self, inputs):
-        return NotImplemented
-
-    @abstractmethod
-    def compute_losses(self, inputs, losses):
-        return NotImplemented
-
-    @abstractmethod
-    def encode(self, x):
-        return NotImplemented
-
-    @abstractmethod
-    def decode(self, z):
-        return NotImplemented
+            param_values_dict[param.name[:-2]] = value
+        return param_values_dict
 
     def run(self, fetches, feed_dict=None, options=None, run_metadata=None):
         return self.session.run(fetches, feed_dict, options, run_metadata)

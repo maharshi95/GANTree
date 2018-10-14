@@ -1,3 +1,4 @@
+from types import ModuleType
 from hyperparams.factory import HyperparamsFactory
 from models.factory import ModelFactory
 
@@ -15,10 +16,18 @@ class ExperimentContext:
 
     @classmethod
     def set_context(cls, hyperparams_name, exp_name=None):
-        if hyperparams_name.endswith('.py'):
-            hyperparams_name = hyperparams_name.split('/')[-1][:-3]
-        cls.hyperparams_name = hyperparams_name
-        cls.Hyperparams = HyperparamsFactory.get_hyperparams(cls.hyperparams_name)
+        if isinstance(hyperparams_name, ModuleType):
+            try:
+                cls.hyperparams_name = hyperparams_name.__name__
+                cls.Hyperparams = hyperparams_name.Hyperparams
+            except Exception as ex:
+                print('module has no attribute Hyperparams: %s' % hyperparams_name.__name__)
+                raise ex
+        else:
+            if hyperparams_name.endswith('.py'):
+                hyperparams_name = '.'.join(hyperparams_name.split('/'))[:-3]
+            cls.hyperparams_name = hyperparams_name
+            cls.Hyperparams = HyperparamsFactory.get_hyperparams(cls.hyperparams_name)
         cls.exp_name = exp_name or cls.Hyperparams.exp_name
         cls.Model = ModelFactory.get_model(cls.Hyperparams.model)
 
@@ -33,3 +42,5 @@ class ExperimentContext:
     @classmethod
     def get_model_class(cls):
         return cls.Model
+
+    tp = type(ModelFactory)
