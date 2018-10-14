@@ -1,0 +1,2 @@
+class BaseTrainer(object):
+    pass
