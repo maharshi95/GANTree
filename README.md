@@ -21,7 +21,7 @@ for node0: for each step:
     TRAIN node0.Di over disc_adv loss
     TRAIN node0.D over gen_adv loss
     
-node0.gmm = GaussianMixture()
+node0.gmm = GaussianMixture(n_components=2)
 node0.gmm.fit(node0.encode(X[0]))
 split X into 2 labels: 1 and 2
 
@@ -42,8 +42,10 @@ CREATE node1 and node2 from node0:
     node1.cov = node0.gmm.cov_[0]
     node2.cov = node0.gmm.cov_[1]
 
-FOR k iterations:
-    repeat for a iters {
+REPEAT for k iters: 
+{
+    REPEAT for a iters 
+    {
         node = sample(node1, node2)
         
         z ~ N(node.mu, node.cov)
@@ -55,9 +57,22 @@ FOR k iterations:
         
         TRAIN node.E over x_clf_loss
     }
-    z = [node1.E(X[1]); node2.E(X[2])] # mix them
-    gmm = GaussianMixture()
-    gmm.fit(z)
-    relabel X[0] with 1 and 2 and split
+    
+    z1 = node1.E(X[1])
+    z2 = node2.E(X[2])
+    
+    gmm1 = GaussianMixture(n_components=1)
+    gmm1.fit(z1)
+    
+    gmm2 = GaussianMixture(n_components=1)
+    gmm2.fit(z2)
+    
+    node1.mu = gmm1.means_
+    node2.mu = gmm2.means_
+    
+    node1.cov = gmm1.cov_
+    node2.cov = gmm2.cov_
+}
 
+Generalize above in a recursive way for each split
 ```
