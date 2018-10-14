@@ -2,13 +2,12 @@ from __future__ import division, print_function, absolute_import
 
 __doc__ = "Archived training algorithm for gan tree"
 import json
-import os, time, argparse, logging, traceback
+import os, argparse, logging, traceback
 
 import numpy as np
 import matplotlib
 
 matplotlib.use('Agg')
-from matplotlib import pyplot as plt
 from exp_context import ExperimentContext
 
 # Setting up Argument parser
@@ -34,13 +33,12 @@ logger = logging.getLogger(__name__)
 LOG_FORMAT = "[{}: %(filename)s: %(lineno)3s] %(levelname)s: %(funcName)s(): %(message)s".format(ExperimentContext.exp_name)
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
-import paths
-from utils import viz_utils, np_utils
+from tf import paths
+from utils import np_utils
 from utils import bash_utils, model_utils
 from dataloaders.factory import DataLoaderFactory
 
-from models_tf.base import BaseModel
-from gan_tree import gan_tree
+from tf.gan_tree import gan_tree
 
 gpu_idx = str(args.gpu)
 

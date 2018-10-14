@@ -5,6 +5,9 @@ from hyperparams import base
 class Hyperparams(base.Hyperparams):
     dtype = tf.float32
 
+    batch_size = 64
+    logit_batch_size = 32
+
     input_size = 2
 
     z_size = 2

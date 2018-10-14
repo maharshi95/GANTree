@@ -19,6 +19,6 @@ class BaseModel(nn.Module):
         def init_fn(module):
             if isinstance(module, nn.Linear):
                 init.xavier_normal_(module.weight)
-                init.constant(module.bias, 0.001)
+                init.constant_(module.bias, 0.001)
 
         self.apply(init_fn)

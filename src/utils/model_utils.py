@@ -1,5 +1,7 @@
-import paths
+from tf import paths
 from . import bash_utils
+
+
 def setup_dirs():
     bash_utils.create_dir(paths.results_base_dir)
     bash_utils.create_dir(paths.logs_base_dir)

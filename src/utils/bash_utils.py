@@ -2,9 +2,6 @@ import os
 import logging
 import socket
 import traceback
-from contextlib import closing
-
-import paths
 
 logger = logging.getLogger(__name__)
 
@@ -84,12 +81,3 @@ def get_ip_address():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("8.8.8.8", 80))
     return s.getsockname()[0]
-
-
-def start_tensorboard(base_port):
-    available_port = find_free_port(base_port)
-    cmd = "tensorboard --logdir {} --port {}".format(paths.logs_base_dir, available_port)
-    ip = get_ip_address()
-    logger.info("Starting Tensorboard for experiment {} at http://{}:{}".format(paths.exp_name, ip, available_port))
-    # exec_cmd(cmd, bg=True)
-    return ip, available_port

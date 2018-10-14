@@ -1,7 +1,3 @@
-import numpy as np
-import tensorflow as tf
-import matplotlib.pyplot as plt
-
 from exp_context import ExperimentContext
 
 hyperparam_file = 'hyperparams/toy_gnode/bcgan_3d.py'
@@ -11,7 +7,7 @@ Model = ExperimentContext.Model
 H = ExperimentContext.Hyperparams
 
 from dataloaders.factory import DataLoaderFactory
-from gan_tree import gan_tree
+from tf.gan_tree import gan_tree
 
 dl = DataLoaderFactory.get_dataloader(H.dataloader)
 

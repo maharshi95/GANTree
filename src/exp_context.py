@@ -1,6 +1,6 @@
 from types import ModuleType
 from hyperparams.factory import HyperparamsFactory
-from models_tf.factory import ModelFactory
+from tf.models_tf.factory import ModelFactory
 
 
 class ExperimentContext:
@@ -29,7 +29,6 @@ class ExperimentContext:
             cls.hyperparams_name = hyperparams_name
             cls.Hyperparams = HyperparamsFactory.get_hyperparams(cls.hyperparams_name)
         cls.exp_name = exp_name or cls.Hyperparams.exp_name
-        cls.Model = ModelFactory.get_model(cls.Hyperparams.model)
 
     @classmethod
     def __repr__(cls):

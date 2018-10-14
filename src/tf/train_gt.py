@@ -1,7 +1,7 @@
 from __future__ import division, print_function, absolute_import
 
 import json
-import os, time, argparse, logging, traceback
+import os, time, argparse, logging
 
 # LOG_FORMAT = "[%(filename)s: %(lineno)3s] %(levelname)s: %(message)s"
 # logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
@@ -41,16 +41,15 @@ if any(map(lambda obj: isinstance(obj, logging.StreamHandler), logger.handlers))
     handler = filter(lambda obj: isinstance(obj, logging.StreamHandler), logger.handlers)[0]
     handler.setFormatter(logging.Formatter(LOG_FORMAT))
 
-import paths
+from tf import paths
 from utils import viz_utils, np_utils
 
 print(dir(np_utils))
 from utils import bash_utils, model_utils
 from dataloaders.factory import DataLoaderFactory
 
-from models_tf.bcgnode import BaseModel
-from gan_tree.gan_tree_v2 import GANSet
-from gan_tree import gan_tree_v2 as gan_tree
+from tf.models_tf import BaseModel
+from tf.gan_tree import gan_tree_v2 as gan_tree
 
 # GPU Selection
 gpu_idx = str(args.gpu)

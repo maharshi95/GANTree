@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 LOG_FORMAT = "[{}: %(filename)s: %(lineno)3s] %(levelname)s: %(funcName)s(): %(message)s".format(ExperimentContext.exp_name)
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
-import paths
+from tf import paths
 from utils import viz_utils
 from utils import bash_utils, model_utils
 from dataloaders.factory import DataLoaderFactory
