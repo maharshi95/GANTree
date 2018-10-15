@@ -6,12 +6,13 @@ import torch as tr
 from torch import nn
 from torch import optim
 
+from models import losses
 from exp_context import ExperimentContext
 
 H = ExperimentContext.Hyperparams
 
 from modules.commons import NLinear
-from base.model import BaseModel
+from base.model import BaseModel, BaseGan
 
 n_batch_logits = H.logit_batch_size
 
@@ -50,7 +51,7 @@ class ToyDisc(BaseModel):
         return sample_logits, batch_logits
 
 
-class ToyGAN(nn.Module):
+class ToyGAN(BaseGan):
     def __init__(self, name, encoder=None, decoder=None, disc=None):
         super(ToyGAN, self).__init__()
         self.name = name
@@ -67,43 +68,99 @@ class ToyGAN(nn.Module):
     def forward(self, *args):
         return super(ToyGAN, self).forward(*args)
 
-    def step_train_disc(self, x, z):
-        x_real = x
-        x_fake = self.decoder(z)
+    def classify(self, x):
+        sample_logits, _ = self.disc(x)
+        return 1 * (sample_logits >= 0.5)
 
-        sample_logits_real, batch_logits_real = self.disc(x_real)
-        sample_logits_fake, batch_logits_fake = self.disc(x_fake)
+    def get_accuracies(self, x, z):
+        with tr.no_grad():
+            real_labels = self.classify(x)
+            fake_labels = self.classify(self.decoder(z))
 
-        loss = tr.mean(sample_logits_real - sample_logits_fake)
+            gen_accuracy = 100 * (fake_labels == 1).type(tr.FloatTensor).mean()
+            disc_accuracy = 50 * ((fake_labels == 0).type(tr.FloatTensor).mean() + (real_labels == 1).type(tr.FloatTensor).mean())
+        return gen_accuracy, disc_accuracy
+
+    def disc_adv_loss(self, x, z):
+        sample_logits_real, batch_logits_real = self.disc(x)
+        sample_logits_fake, batch_logits_fake = self.disc(self.decoder(z))
+
+        sample_loss_real = losses.sigmoid_cross_entropy_loss(sample_logits_real, 1.0)
+        sample_loss_fake = losses.sigmoid_cross_entropy_loss(sample_logits_fake, 0.0)
+
+        batch_loss_real = losses.sigmoid_cross_entropy_loss(batch_logits_real, 1.0)
+        batch_loss_fake = losses.sigmoid_cross_entropy_loss(batch_logits_fake, 0.0)
+
+        sample_x_entropy_loss = sample_loss_real + sample_loss_fake
+        batch_x_entropy_loss = batch_loss_real + batch_loss_fake
+
+        wgan_loss = tr.mean(sample_logits_real - sample_logits_fake)
+
+        loss = sample_x_entropy_loss + batch_x_entropy_loss
+
+        return loss
+
+    def gen_adv_loss(self, z):
+        sample_logits_fake, batch_logits_fake = self.disc(self.decoder(z))
+
+        sample_loss = losses.sigmoid_cross_entropy_loss(sample_logits_fake, 1.0)
+        batch_loss = losses.sigmoid_cross_entropy_loss(batch_logits_fake, 1.0)
+
+        loss = sample_loss + batch_loss
+
+        wgan_loss = tr.mean(sample_logits_fake)
+
+        return loss
+
+    def cyclic_loss(self, x, z):
+        x_recon = self.decoder(self.encoder(x))
+        z_recon = self.encoder(self.decoder(z))
+
+        x_recon_loss = tr.mean((x - x_recon) ** 2)
+        z_recon_loss = tr.mean((z - z_recon) ** 2)
+
+        c_loss = x_recon_loss + z_recon_loss
+
+        return c_loss
+
+    def step_train_discriminator(self, x, z):
+        loss = self.disc_adv_loss(x, z)
 
         self.opt['disc'].zero_grad()
-
         loss.backward()
 
         self.opt['disc'].step()
         return loss
 
-    def step_train_generator(self, x, z):
-        x_real = x
-        z_rand = z
+    def step_train_autoencoder(self, x, z):
+        c_loss = self.cyclic_loss(x, z)
 
-        z_real = self.encoder(x_real)
-        x_recon = self.decoder(z_real)
-
-        x_fake = self.decoder(z_rand)
-        z_recon = self.encoder(x_fake)
-
-        x_loss = tr.mean((x_real - x_recon) ** 2)
-        z_loss = tr.mean((z_real - z_recon) ** 2)
-
-        c_loss = x_loss + z_loss
+        loss = c_loss
 
         self.opt['encoder'].zero_grad()
         self.opt['decoder'].zero_grad()
 
-        c_loss.backward()
+        loss.backward()
 
         self.opt['encoder'].step()
         self.opt['decoder'].step()
 
-        return c_loss
+        return loss
+
+    def step_train_generator(self, z):
+        loss = self.gen_adv_loss(z)
+        self.opt['decoder'].zero_grad()
+        loss.backward()
+        self.opt['decoder'].step()
+        return loss
+
+    def step_train_x_clf(self, x1, x2, mu1, mu2, cov1, cov2):
+        x_clf_loss = losses.x_clf_loss(mu1, cov1, mu2, cov2, x1, x2)
+
+        self.opt['encoder'].zero_grad()
+
+        x_clf_loss.backward()
+
+        self.opt['encoder'].step()
+
+        return x_clf_loss
