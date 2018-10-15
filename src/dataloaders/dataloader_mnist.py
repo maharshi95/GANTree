@@ -1,8 +1,6 @@
 import numpy as np
 
-from dataloaders.base import BaseDataLoader
 from utils import np_utils
-from dataset_loader import Dataset
 from exp_context import ExperimentContext
 
 H = ExperimentContext.get_hyperparams()
