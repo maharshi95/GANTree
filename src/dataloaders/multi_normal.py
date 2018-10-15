@@ -61,7 +61,7 @@ class FourGaussiansDataLoader(BaseDataLoader):
 
 
 class FourSymGaussiansDataLoader(BaseDataLoader):
-    def __init__(self, input_size=1, latent_size=1, train_batch_size=32, test_batch_size=32):
+    def __init__(self, input_size=1, latent_size=2, train_batch_size=32, test_batch_size=32):
         super(FourSymGaussiansDataLoader, self).__init__(input_size, latent_size, train_batch_size, test_batch_size)
 
     def get_data(self, train_ratio=0.6):

@@ -4,7 +4,7 @@ from utils import np_utils
 
 class BaseDataLoader(object):
 
-    def __init__(self, input_size=1, latent_size=1, train_batch_size=32, test_batch_size=32):
+    def __init__(self, input_size=1, latent_size=2, train_batch_size=32, test_batch_size=32):
         self.input_size = input_size
         self.latent_size = latent_size
 

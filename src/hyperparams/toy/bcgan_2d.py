@@ -31,4 +31,4 @@ class Hyperparams(base.Hyperparams):
     dataloader = 'four_gaussian_sym'
 
     model = 'bcgan'
-    exp_name = 'bcgan_2D_two_gaussians_sample_logits'
+    exp_name = 'trial'

@@ -164,3 +164,25 @@ class ToyGAN(BaseGan):
         self.opt['encoder'].step()
 
         return x_clf_loss
+
+    def encode(self, x_batch):
+        return self.encoder(x_batch)
+
+    def decode(self, z_batch):
+        return self.decode(z_batch)
+
+    def reconstruct_x(self, x_batch):
+        return self.decoder(self.encoder(x_batch))
+
+    def reconstruct_z(self, z_batch):
+        return self.encoder(self.decoder(z_batch))
+
+    def discriminate(self, x_batch, split=True):
+        preds, _ = self.disc(x_batch)  # sample_logits_real
+        preds = preds>=0
+        if split:
+            x_batch_real = x_batch[np.where(preds == 1)]
+            x_batch_fake = x_batch[np.where(preds == 0)]
+            return preds, x_batch_real, x_batch_fake
+        else:
+            return preds
