@@ -41,15 +41,15 @@ if any(map(lambda obj: isinstance(obj, logging.StreamHandler), logger.handlers))
     handler = filter(lambda obj: isinstance(obj, logging.StreamHandler), logger.handlers)[0]
     handler.setFormatter(logging.Formatter(LOG_FORMAT))
 
-from tf import paths
+from _tf import paths
 from utils import viz_utils, np_utils
 
 print(dir(np_utils))
 from utils import bash_utils, model_utils
 from dataloaders.factory import DataLoaderFactory
 
-from tf.models_tf import BaseModel
-from tf.gan_tree import gan_tree_v2 as gan_tree
+from _tf.models_tf import BaseModel
+from _tf.gan_tree import gan_tree_v2 as gan_tree
 
 # GPU Selection
 gpu_idx = str(args.gpu)

@@ -1,6 +1,6 @@
 import os
 import logging
-from tf import paths
+from _tf import paths
 from abc import ABCMeta, abstractmethod
 import tensorflow as tf
 from tensorflow.contrib import framework as tf_framework

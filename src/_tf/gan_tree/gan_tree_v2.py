@@ -1,18 +1,26 @@
-from collections import deque
+import logging
+from collections import deque, namedtuple
+from types import NoneType
 
 import numpy as np
 from scipy import stats
 import tensorflow as tf
 from sklearn import mixture
-from exp_context import ExperimentContext
-from tf.models_tf import BaseModel
 
+from exp_context import ExperimentContext
+from _tf.models_tf import BaseModel
+
+logger = logging.getLogger(__name__)
+
+Params = namedtuple('Params', 'prior_mean prior_cov cond_prob abs_prob')
 
 class GNode(object):
     """
     A single Node of the GANTree which contains the model and a gmm with its parameters,
     along with references to its parent and children nodes.
     """
+    child_nodes = None  # type: dict[int, GNode]
+    parent = None  # type: GNode
     gmm = None  # type: mixture.GaussianMixture
     model = None  # type: BaseModel
 
@@ -20,16 +28,24 @@ class GNode(object):
         self.model = model
         self.cond_prob = 0.
         self.prob = 0.
-        self.means = None
-        self.cov = None
         self.child_nodes = {}
         self.child = []
         self.node_id = node_id
         self.parent = parent
         self.gmm = None
+        self.prior_mean = None
+        self.prior_cov = None
 
     def __repr__(self):
         return '<GNode[name={} node_id={} parent_id={}]>'.format(self.name, self.node_id, self.parent_id)
+
+    @property
+    def is_root(self):
+        return self.parent is None
+
+    @property
+    def id(self):
+        return self.node_id
 
     @property
     def parent_id(self):
@@ -41,31 +57,42 @@ class GNode(object):
 
     @property
     def name(self):
-        return self.model.model_name
+        return self.model.name
+
+    @property
+    def model_name(self):
+        return self.model.name
+
+    @property
+    def parent_name(self):
+        return 'null_node' if self.parent is None else self.parent.name
+
+    @property
+    def model_scope(self):
+        return self.model.model_scope
 
     @property
     def params(self):
-        return self.means, self.cov, self.cond_prob, self.prob
+        return self.prior_mean, self.prior_cov, self.cond_prob, self.prob
 
     @params.setter
     def params(self, all_params):
-        self.means, self.cov, self.cond_prob, self.prob = all_params
+        self.prior_mean, self.prior_cov, self.cond_prob, self.prob = all_params
 
     @property
     def cluster_probs(self):
         return self.gmm.weights_
 
     def get_child(self, child_node_id):
+        # type: (int) -> GNode
         return self.child_nodes[child_node_id]
 
     def pdf(self, x):
-        f = stats.multivariate_normal(self.means, cov=self.cov)
+        f = stats.multivariate_normal(self.prior_mean, cov=self.prior_cov)
         return f.pdf(x)
 
     def sample_z_batch(self, n_samples=1):
-        # TODO: change the impl to gmm.sample
-        self.gmm.sample(n_samples)
-        return np.random.multivariate_normal(self.means, self.cov, n_samples)
+        return np.random.multivariate_normal(self.prior_mean, self.prior_cov, n_samples)
 
     def predict_z(self, Z, probs=False):
         if Z.shape[0] == 0:
@@ -81,8 +108,11 @@ class GNode(object):
         if X.shape[0] == 0:
             return np.array([])
         Z = self.model.encode(X)
-        Y = self.predict_z(Z, probs)
-        return Y
+        return self.predict_z(Z, probs)
+
+    def mean_likelihood(self, X):
+        Z = self.model.encode(X)
+        return np.mean(self.pdf(Z))
 
     def split_z(self, Z):
         """
@@ -131,11 +161,11 @@ class GANSet(object):
 
     @property
     def means(self):
-        return np.array([self[i].means for i in range(self.size)])
+        return np.array([self[i].prior_mean for i in range(self.size)])
 
     @property
     def cov(self):
-        return np.array([self[i].cov for i in range(self.size)])
+        return np.array([self[i].prior_cov for i in range(self.size)])
 
     @property
     def probs(self):
@@ -145,7 +175,7 @@ class GANSet(object):
         probs = np.array([gan.prob for gan in self.gans])
         gan_ids = np.random.choice(range(self.size), size=n_samples, p=probs)
         z_batch = np.array([self[gan_id].sample_z_batch()[0] for gan_id in gan_ids])
-        return z_batch
+        return gan_ids, z_batch
 
     def predict_z(self, Z):
         n_samples = Z.shape[0]
@@ -197,7 +227,7 @@ class GANSet(object):
 
 
 class GanTree(object):
-    def __init__(self, name, Model, x_batch, n_child=2):
+    def __init__(self, name, Model, x_batch=None, n_child=2):
         self.name = name
         self.Model = Model
         self.x_batch = x_batch
@@ -211,13 +241,13 @@ class GanTree(object):
 
     def initiate(self):
         assert self._is_initiated == False
-        params = np.zeros(self.H.z_size), np.eye(self.H.z_size), 1.0, 1.0
+        params = Params(np.zeros(self.H.z_size), np.eye(self.H.z_size), 1.0, 1.0)
 
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
 
         self.session = tf.Session(config=config)
-        self.create_child_node(params, parent=None)
+        self.create_child_node(params, parent=None, initialize_shared_variables=True)
         self._is_initiated = True
 
     def parent(self, gnode):
@@ -235,13 +265,33 @@ class GanTree(object):
     def root(self):
         return self.nodes[0]
 
-    def create_child_node(self, params, parent=None):
-        # type: (tuple, {GNode, object}) -> GNode
+    @property
+    def scope(self):
+        return self.name
+
+    def create_child_node(self, params, parent=None, initialize_shared_variables=False):
+        # type: (Params, GNode or NoneType, bool) -> GNode
         new_node_id = len(self.nodes)
-        model_name = "%s-%d" % (self.name, new_node_id)
-        model = self.Model(model_name, session=self.session)  # type: BaseModel
+
+        model_name = "node-%d" % new_node_id
+        model_scope = "%s/%s" % (self.scope, model_name)
+
+        logger.info('Creating Child Node: %s with scope %s' % (model_name, model_scope))
+        logger.info('Node parameters: ')
+        logger.info('prior_means: {}'.format(params.prior_mean))
+        logger.info('prior_cov  : {}'.format(params.prior_cov))
+        logger.info('cond_prob  : {}'.format(params.cond_prob))
+        logger.info('abs_prob   : {}'.format(params.abs_prob))
+        print('')
+
+        shared_scope = self.shared_scope(parent) if parent else self.default_shared_scope()
+        model = self.Model(model_name, session=self.session,
+                           shared_scope=shared_scope,
+                           model_scope=model_scope,
+                           z_mean=params.prior_mean,
+                           z_cov=params.prior_cov)  # type: BaseModel
         model.build()
-        model.initiate_service()
+        model.initiate_service(initialize_shared_variables=initialize_shared_variables)
 
         new_node = GNode(new_node_id, model, parent)
         new_node.params = params
@@ -254,7 +304,9 @@ class GanTree(object):
 
         return new_node
 
-    def split_node(self, parent):
+    def split_node(self, parent, x_batch=None):
+        x_batch = x_batch or self.x_batch
+        assert self.x_batch is not None
         assert isinstance(parent, GNode) or (isinstance(parent, int) and parent < len(self.nodes))
         if isinstance(parent, GNode):
             assert parent.node_id not in self.split_history
@@ -262,28 +314,34 @@ class GanTree(object):
             assert parent not in self.split_history
             parent = self.nodes[parent]
 
+        logger.info('Starting Split Process: %s' % parent)
         gmm = mixture.GaussianMixture(n_components=self.n_child, covariance_type='full', max_iter=1000)
         parent.gmm = gmm
-
-        z_batch = parent.model.encode(self.x_batch)
+        z_batch = parent.model.encode(x_batch)
         parent.gmm.fit(z_batch)
+        logger.info('Gaussian Mixture Fitted')
+        print('')
+
         self.mixture_models[parent.node_id] = parent.gmm
         self.split_history.append(parent.node_id)
 
         child_nodes = []
 
+        initialize_shared_variables = True
         for i_child in range(self.n_child):
-            means = gmm.means_[i_child]
-            cov = gmm.covariances_[i_child]
+            n = self.H.z_size
+            means = np.ones(n) * 3.0 * np.power(-1, i_child)
+            cov = np.eye(n)
             cond_prob = gmm.weights_[i_child]
             prob = parent.prob * cond_prob
-            child_node_params = means, cov, cond_prob, prob
-            child_node = self.create_child_node(child_node_params, parent)
+            child_node_params = Params(means, cov, cond_prob, prob)
+            child_node = self.create_child_node(child_node_params, parent, initialize_shared_variables)
+            initialize_shared_variables = False
             child_nodes.append(child_node)
-
+            print('')
         return child_nodes
 
-    def get_gans(self, k_clusters):
+    def create_ganset(self, k_clusters):
         active_nodes = {self.nodes[0]}
         for i in range(k_clusters - 1):
             split_node = self.nodes[self.split_history[i]]
@@ -300,3 +358,12 @@ class GanTree(object):
 
     def shutdown(self):
         self._recursive_shutdown(0)
+
+    def default_shared_scope(self):
+        """
+        :return: the shared scope name used by the root node.
+        """
+        return self.scope + '/shared/null_node'
+
+    def shared_scope(self, parent_node=None):
+        return self.scope + '/shared/' + parent_node.model_name

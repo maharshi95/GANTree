@@ -3,9 +3,9 @@ import logging
 import numpy as np
 import tensorflow as tf
 
-from tf.model_components import losses
-from tf.model_components import encoder, decoder, disc_v2
-from tf.models_tf import BaseModel
+from _tf.model_components import encoder, decoder, disc
+from _tf.model_components import losses
+from _tf.models_tf import BaseModel
 from exp_context import ExperimentContext
 
 H = ExperimentContext.Hyperparams
@@ -33,7 +33,7 @@ class Model(BaseModel):
         logger.info('%s: Model Definition complete' % repr(self))
 
         # logger.info('%s: Model Params:' % repr(self))
-        # for param in tf.trainable_variables(self.model_scope):
+        # for param in _tf.trainable_variables(self.model_scope):
         #     logger.info(param)
 
         self.__is_model_built = True
@@ -66,51 +66,21 @@ class Model(BaseModel):
             self.z_recon = encoder(self.x_fake)
 
             # Disc Iteration
-            self.logits_real, self.entropy_logits_real = disc_v2(self.x_real)
-            self.logits_fake, self.entropy_logits_fake = disc_v2(self.x_fake)
+            self.logits_real = disc(self.x_real)
+            self.logits_fake = disc(self.x_fake)
 
     def _define_losses(self):
         batch_size = tf.shape(self.ph_X)[0]
-        logit_batch_size = tf.shape(self.entropy_logits_real)[0]
-
         self.x_recon_loss = tf.reduce_mean((self.x_real - self.x_recon) ** 2)
         self.z_recon_loss = tf.reduce_mean((self.z_rand - self.z_recon) ** 2)
         # [B, 2]
-
-        real_entropy_labels = tf.ones([logit_batch_size, 1])
-        fake_entropy_labels = tf.zeros([logit_batch_size, 1])
-
         real_labels = tf.ones([batch_size, 1])
         fake_labels = tf.zeros([batch_size, 1])
 
-        self.disc_batch_loss_real = losses.sigmoid_cross_entropy_loss(real_entropy_labels, self.entropy_logits_real)
-        self.disc_batch_loss_fake = losses.sigmoid_cross_entropy_loss(fake_entropy_labels, self.entropy_logits_fake)
+        self.disc_loss_real = losses.sigmoid_cross_entropy_loss(real_labels, self.logits_real)
+        self.disc_loss_fake = losses.sigmoid_cross_entropy_loss(fake_labels, self.logits_fake)
 
-        self.gen_batch_loss = losses.sigmoid_cross_entropy_loss(real_entropy_labels, self.entropy_logits_fake)
-
-        self.disc_sample_loss_real = losses.sigmoid_cross_entropy_loss(real_labels, self.logits_real)
-        self.disc_sample_loss_fake = losses.sigmoid_cross_entropy_loss(fake_labels, self.logits_fake)
-
-        self.gen_sample_loss = losses.sigmoid_cross_entropy_loss(real_labels, self.logits_fake)
-
-        if H.train_sample_logits and H.train_batch_logits:
-            self.disc_loss_real = (self.disc_batch_loss_real + self.disc_sample_loss_real) / 2.0
-            self.disc_loss_fake = (self.disc_batch_loss_fake + self.disc_sample_loss_fake) / 2.0
-            self.gen_loss = (self.gen_batch_loss + self.gen_sample_loss) / 2.0
-
-        elif H.train_sample_logits:
-            self.disc_loss_real = self.disc_sample_loss_real
-            self.disc_loss_fake = self.disc_sample_loss_fake
-            self.gen_loss = self.gen_sample_loss
-
-        elif H.train_batch_logits:
-            self.disc_loss_real = self.disc_batch_loss_real
-            self.disc_loss_fake = self.disc_batch_loss_fake
-            self.gen_loss = self.gen_batch_loss
-
-        else:
-            logger.error('Logits Training set False for both sample and batch: Atleast one must be set True in Hyperparams')
-            raise Exception('Logits not set to train')
+        self.gen_loss = losses.sigmoid_cross_entropy_loss(real_labels, self.logits_fake)
 
         self.encoder_loss = self.x_recon_loss + self.z_recon_loss
         self.decoder_loss = self.encoder_loss + 0 * self.gen_loss
@@ -133,40 +103,22 @@ class Model(BaseModel):
 
     def _define_summaries(self):
         summaries_list = [
-            tf.summary.scalar('recon_x_loss', self.x_recon_loss),
-            tf.summary.scalar('recon_z_loss', self.z_recon_loss),
-            tf.summary.scalar('recon_loss', self.encoder_loss),
-
+            tf.summary.scalar('x_recon_loss', self.x_recon_loss),
+            tf.summary.scalar('z_recon_loss', self.z_recon_loss),
+            tf.summary.scalar('encoder_loss', self.encoder_loss),
             tf.summary.scalar('gen_loss', self.gen_loss),
-            tf.summary.scalar('gen_loss_batch', self.gen_batch_loss),
-            tf.summary.scalar('gen_loss_samples', self.gen_sample_loss),
-
             tf.summary.scalar('disc_loss', self.disc_loss),
-
-            tf.summary.scalar('disc_loss_sample_real', self.disc_sample_loss_real),
-            tf.summary.scalar('disc_loss_sample_fake', self.disc_sample_loss_fake),
-
-            tf.summary.scalar('disc_loss_batch_real', self.disc_batch_loss_real),
-            tf.summary.scalar('disc_loss_batch_fake', self.disc_batch_loss_fake),
-
-            tf.summary.scalar('disc_loss_real', self.disc_loss_real),
-            tf.summary.scalar('disc_loss_fake', self.disc_loss_fake),
-
             tf.summary.scalar('gen_acc', self.gen_acc),
-
             tf.summary.scalar('disc_acc', self.disc_acc),
-            tf.summary.scalar('disc_acc_real', self.disc_real_acc),
-            tf.summary.scalar('disc_acc_fake', self.disc_fake_acc),
+            tf.summary.scalar('disc_real_acc', self.disc_real_acc),
+            tf.summary.scalar('disc_fake_acc', self.disc_fake_acc),
 
             tf.summary.histogram('z_rand', self.z_rand),
             tf.summary.histogram('z_real', self.z_real),
             tf.summary.histogram('z_recon', self.z_recon),
 
-            tf.summary.image("Generated images",self.x_fake)
-            # tf.summary.image("")
-
-            # tf.summary.histogram('fake_preds', self.disc_real_preds),
-            # tf.summary.histogram('real_preds', self.disc_fake_preds),
+            # _tf.summary.histogram('fake_preds', self.disc_real_preds),
+            # _tf.summary.histogram('real_preds', self.disc_fake_preds),
         ]
 
         self.summaries = tf.summary.merge(summaries_list)
@@ -233,6 +185,9 @@ class Model(BaseModel):
             self.ph_Z: z_input,
         })
         return network_outputs
+
+    def run(self, fetches, feed_dict=None, options=None, run_metadata=None):
+        return self.session.run(fetches, feed_dict, options, run_metadata)
 
     def encode(self, x_batch):
         return self.session.run(self.z_real, {

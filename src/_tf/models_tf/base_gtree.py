@@ -1,8 +1,8 @@
 from __future__ import division, print_function
 import os, logging
-from tf.models_tf import base_infergan
+from _tf.models_tf import base_infergan
 
-from tf import paths
+from _tf import paths
 import tensorflow as tf
 
 from abc import ABCMeta, abstractmethod
@@ -232,7 +232,7 @@ class BaseModel(base_infergan.BaseModel):
         """
         param_values_dict = {}
         # scope = self.private_scope if private_only else self.model_scope
-        # params = tf.trainable_variables(scope) if trainable_only else tf.global_variables(scope)
+        # params = _tf.trainable_variables(scope) if trainable_only else _tf.global_variables(scope)
         params = self.get_params(private_only, trainable_only)
         values = self.session.run(params)
         for param, value in zip(params, values):

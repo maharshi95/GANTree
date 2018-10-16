@@ -33,12 +33,12 @@ logger = logging.getLogger(__name__)
 LOG_FORMAT = "[{}: %(filename)s: %(lineno)3s] %(levelname)s: %(funcName)s(): %(message)s".format(ExperimentContext.exp_name)
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
-from tf import paths
+from _tf import paths
 from utils import np_utils
 from utils import bash_utils, model_utils
 from dataloaders.factory import DataLoaderFactory
 
-from tf.gan_tree import gan_tree
+from _tf.gan_tree import gan_tree
 
 gpu_idx = str(args.gpu)
 

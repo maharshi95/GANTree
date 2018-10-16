@@ -1,4 +1,4 @@
-from tf import paths
+import paths
 from . import bash_utils
 
 

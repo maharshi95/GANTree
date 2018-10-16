@@ -7,7 +7,7 @@ Model = ExperimentContext.Model
 H = ExperimentContext.Hyperparams
 
 from dataloaders.factory import DataLoaderFactory
-from tf.gan_tree import gan_tree
+from _tf.gan_tree import gan_tree
 
 dl = DataLoaderFactory.get_dataloader(H.dataloader)
 
