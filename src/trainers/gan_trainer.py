@@ -1,159 +1,221 @@
 from __future__ import print_function, division
-import torch as tr
+from collections import namedtuple
 
+import time
+import torch as tr
+import matplotlib
+
+matplotlib.use('Agg')
+from matplotlib import pyplot as plt
+import paths
+from utils import viz_utils
+from base import hyperparams as base
 from base.model import BaseGan
 from base.trainer import BaseTrainer
 from base.dataloader import BaseDataLoader
+from tensorboardX import SummaryWriter
+
+
+def get_x_plots_data(model, x_input):
+    _, x_real_true, x_real_false = model.discriminate(x_input)
+
+    z_real_true = model.encode(x_real_true)
+    z_real_false = model.encode(x_real_false)
+
+    x_recon = model.reconstruct_x(x_input)
+    _, x_recon_true, x_recon_false = model.discriminate(x_recon)
+
+    z_recon_true = model.encode(x_recon_true)
+    z_recon_false = model.encode(x_recon_false)
+
+    return [
+        (x_real_true, x_real_false),
+        (z_real_true, z_real_false),
+        (x_recon_true, x_recon_false),
+        (z_recon_true, z_recon_false)
+    ]
+
+
+def get_z_plots_data(model, z_input):
+    x_input = model.decode(z_input)
+    x_plots = get_x_plots_data(model, x_input)
+    return [z_input] + x_plots[:-1]
+
+
+TrainConfig = namedtuple(
+    'TrainConfig',
+    'n_step_tboard_log '
+    'n_step_console_log '
+    'n_step_validation '
+    'n_step_save_params '
+    'n_step_visualize'
+)
 
 
 class GanTrainer(BaseTrainer):
-    def __init__(self, model, data_loader, n_iterations):
-        # type: (BaseGan, BaseDataLoader, int) -> None
-        super(GanTrainer, self).__init__(model, data_loader, n_iterations)
+    def __init__(self, model, data_loader, hyperparams, train_config):
+        # type: (BaseGan, BaseDataLoader, base.Hyperparams, TrainConfig) -> None
+
+        self.H = hyperparams
+        self.iter_no = 0
+        self.n_iter_gen = 0
+        self.n_iter_disc = 0
+        self.n_step_gen, self.n_step_disc = self.H.step_ratio
+        self.train_generator = True
+        self.train_config = train_config
+
+        self.writer = {
+            'train': SummaryWriter(paths.log_writer_path('train')),
+            'test': SummaryWriter(paths.log_writer_path('test')),
+        }
+
+        self.test_seed = {
+            'x': data_loader.next_batch('test'),
+            'z': data_loader.get_z_dist(self.H.batch_size, dist_type=self.H.z_dist_type, bounds=self.H.z_bounds)
+        }
+
+        super(GanTrainer, self).__init__(model, data_loader, self.H.n_iterations)
+
+    def gen_train_limit_reached(self, gen_accuracy):
+        return self.n_iter_gen == self.H.gen_iter_count or gen_accuracy >= 70
+
+    def disc_train_limit_reached(self, disc_accuracy):
+        return self.n_iter_disc == self.H.disc_iter_count or disc_accuracy >= 95
+
+    # Check Functions for various operations
+    def is_console_log_step(self):
+        return self.iter_no % self.train_config.n_step_console_log == 0
+
+    def is_tboard_log_step(self):
+        return self.iter_no % self.train_config.n_step_tboard_log == 0
+
+    def is_params_save_step(self):
+        return self.iter_no % self.train_config.n_step_save_params == 0
+
+    def is_validation_step(self):
+        return self.iter_no % self.train_config.n_step_validation == 0
+
+    def is_visualization_step(self):
+        if self.H.show_visual_while_training:
+            if self.iter_no % self.train_config.n_step_visualize == 0:
+                return True
+            elif self.iter_no < self.train_config.n_step_visualize:
+                if self.iter_no % 200 == 0:
+                    return True
+        return False
+
+    # Conditional Switch - Training Networks
+    def switch_train_mode(self, gen_accuracy, disc_accuracy):
+        if self.train_generator:
+            if self.gen_train_limit_reached(gen_accuracy):
+                self.n_iter_gen = 0
+                self.train_generator = False
+
+        if not self.train_generator:
+            if self.disc_train_limit_reached(disc_accuracy):
+                self.n_iter_disc = 0
+                self.train_generator = True
+
+    def validation(self):
+        H = self.H
+        model = self.model
+        dl = self.data_loader
+
+        x_test = dl.next_batch('test')
+        z_test = dl.get_z_dist(x_test.shape[0], dist_type=H.z_dist_type, bounds=H.z_bounds)
+        metrics = model.compute_metrics(x_test, z_test)
+        g_acc, d_acc = metrics['accuracy_gen'], metrics['accuracy_disc']
+
+        print('Test Step', self.iter_no + 1)
+        print('Gen  Accuracy:', g_acc.item())
+        print('Disc Accuracy:', d_acc.item())
+
+        print('Step %i: Disc Acc: %f' % (self.iter_no, metrics['accuracy_disc']))
+        print('Step %i: Gen  Acc: %f' % (self.iter_no, metrics['accuracy_gen']))
+        print('Step %i: x_recon Loss: %f' % (self.iter_no, metrics['loss_x_recon']))
+        print('Step %i: z_recon Loss: %f' % (self.iter_no, metrics['loss_z_recon']))
+        print()
+
+        # Tensorboard Log
+        if self.is_tboard_log_step():
+            for tag, value in metrics.items():
+                self.writer['test'].add_scalar(tag, value, self.iter_no)
 
     def train(self):
         dl = self.data_loader
         model = self.model
+        H = self.H
 
-        for iter_no in range(self.n_iterations):
-            x_train = tr.Tensor(dl.next_batch('train'))
-            z_train = tr.Tensor(dl.next_batch('train'))
+        while self.iter_no < self.n_iterations:
+            self.iter_no += 1
 
-            if iter_no % 20 < 15:
-                c_loss = model.step_train_autoencoder(x_train, z_train)
-                g_loss = model.step_train_generator(z_train)
+            iter_time_start = time.time()
+
+            x_train = dl.next_batch('train')
+            z_train = dl.get_z_dist(x_train.shape[0], dist_type=H.z_dist_type, bounds=H.z_bounds)
+
+            if H.train_autoencoder:
+                model.step_train_autoencoder(x_train, z_train)
+
+            if self.train_generator:
+                self.n_iter_gen += 1
+                if H.train_generator_adv:
+                    model.step_train_generator(z_train)
             else:
-                # pass
-                d_loss = model.step_train_discriminator(x_train, z_train)
-            g_acc, d_acc = model.get_accuracies(x_train, z_train)
+                self.n_iter_disc += 1
+                model.step_train_discriminator(x_train, z_train)
 
-            x_test = dl.next_batch('test')
+            # Train Losses Computation
+            metrics = model.compute_metrics(x_train, z_train)
+            g_acc, d_acc = metrics['accuracy_gen'], metrics['accuracy_disc']
 
-            if iter_no % 100 == 99:
-                print('Step', iter_no + 1)
+            # Console Log
+            if self.is_console_log_step():
+                print('Train Step', self.iter_no + 1)
                 print('Gen  Accuracy:', g_acc.item())
                 print('Disc Accuracy:', d_acc.item())
 
+                print('Step %i: Disc Acc: %f' % (self.iter_no, metrics['accuracy_disc']))
+                print('Step %i: Gen  Acc: %f' % (self.iter_no, metrics['accuracy_gen']))
+                print('Step %i: x_recon Loss: %f' % (self.iter_no, metrics['loss_x_recon']))
+                print('Step %i: z_recon Loss: %f' % (self.iter_no, metrics['loss_z_recon']))
+                print()
 
-"""
-modify later
-"""
-import matplotlib
-matplotlib.use('Agg')
-from matplotlib import pyplot as plt
-from dataloaders.multi_normal import FourSymGaussiansDataLoader
-import numpy as np
-from hyperparams.toy import bcgan_2d
-from exp_context import ExperimentContext
+            # Tensorboard Log
+            if self.is_tboard_log_step():
+                for tag, value in metrics.items():
+                    self.writer['train'].add_scalar(tag, value, self.iter_no)
 
-ExperimentContext.set_context(bcgan_2d)  # hyperparams name
+            # Validation Computations
+            if self.is_validation_step(): self.validation()
 
-from models.toy.nets import ToyGAN
-from utils import viz_utils
+            # Weights Saving
+            if self.is_params_save_step():
+                model.save_params(dir_name='iter', weight_label='iter', iter_no=self.iter_no)
 
+            # Visualization
+            if self.is_visualization_step():
+                x_full = dl.get_full_space()
 
+                x_plots_row1 = get_x_plots_data(model, self.test_seed['x'])
+                z_plots_row2 = get_z_plots_data(model, self.test_seed['z'])
+                x_plots_row3 = get_x_plots_data(model, x_full)
 
+                plots_data = (x_plots_row1, z_plots_row2, x_plots_row3)
 
-from tf import paths
+                figure = viz_utils.get_figure(plots_data)
+                figure_name = 'plots-iter-%d.png' % self.iter_no
+                figure_path = paths.get_result_path(figure_name)
+                figure.savefig(figure_path)
+                plt.close(figure)
 
-from torch.autograd import variable
-dl = FourSymGaussiansDataLoader()
-H = ExperimentContext.get_hyperparams()
+                # TODO: Something wrong here, fix this
+                img = plt.imread(figure_path)
+                self.writer['test'].add_image('plot_iter', img, self.iter_no)
 
+            # Switch Training Networks
+            self.switch_train_mode(g_acc, d_acc)
 
-
-max_epochs = 20000
-
-n_step_console_log = 500
-n_step_tboard_log = 10
-n_step_validation = 50
-n_step_iter_save = 5000
-n_step_visualize = 500
-n_step_generator = 10
-
-en_loss_history = []
-de_loss_history = []
-di_loss_history = []
-d_acc_history = []
-g_acc_history = []
-gen_loss_history = []
-
-model = ToyGAN('gan')
-iter_no = 0
-x_train, x_test = dl.get_data()
-print('Train Test Data loaded...')
-
-while iter_no < max_epochs:
-    iter_no += 1
-
-    z_train = dl.get_z_dist(x_train.shape[0], dist_type=H.z_dist_type)
-    z_test = dl.get_z_dist(x_test.shape[0], dist_type=H.z_dist_type)
-
-    train_inputs = x_train, z_train
-    test_inputs = x_test, z_test
-
-    model.step_train_autoencoder(tr.FloatTensor(x_train), tr.FloatTensor(z_train))
-
-    if (iter_no % n_step_generator) == 0:
-        if H.train_generator_adv:
-            model.step_train_generator(tr.FloatTensor(z_train))
-    else:
-        model.step_train_discriminator(tr.FloatTensor(x_train), tr.FloatTensor(z_train))
-
-    g_acc, d_acc = model.get_accuracies(tr.FloatTensor(x_train), tr.FloatTensor(z_train))
-
-    x_test = dl.next_batch('test')
-
-    if iter_no % 10 == 9:
-        print('Step', iter_no + 1)
-        print('Gen  Accuracy:', g_acc.item())
-        print('Disc Accuracy:', d_acc.item())
-
-
-    if H.show_visual_while_training and (iter_no % n_step_visualize == 0 or (iter_no < n_step_visualize and iter_no % 200 == 0)):
-        def get_x_plots_data(x_input):
-            _, x_real_true, x_real_false = model.discriminate(x_input)
-
-            z_real_true = model.encode(x_real_true)
-            z_real_false = model.encode(x_real_false)
-
-            x_recon = model.reconstruct_x(x_input)
-            _, x_recon_true, x_recon_false = model.discriminate(x_recon)
-
-            z_recon_true = model.encode(x_recon_true)
-            z_recon_false = model.encode(x_recon_false)
-
-            return [
-                (x_real_true.data.numpy(), x_real_false.numpy()),
-                (z_real_true.numpy(), z_real_false.numpy()),
-                (x_recon_true.numpy(), x_recon_false.numpy()),
-                (z_recon_true.numpy(), z_recon_false.numpy())
-            ]
-
-
-        def get_z_plots_data(z_input):
-            z_input = tr.from_numpy(z_input)
-
-            x_input = model.decode(z_input)
-            x_plots = get_x_plots_data(x_input)
-            return [z_input.numpy()] + x_plots[:-1]
-
-
-        x_full = dl.get_full_space() # np
-
-        x_plots_row1 = get_x_plots_data(x_test)
-        z_plots_row2 = get_z_plots_data(z_test)   # flag!!!!!!!!!!
-        x_plots_row3 = get_x_plots_data(x_full)
-        plots_data = (x_plots_row1, z_plots_row2, x_plots_row3)
-        figure = viz_utils.get_figure(plots_data)
-        figure_name = 'plots-iter-%d.png' % iter_no
-        figure_path = paths.get_result_path(figure_name)
-        figure.savefig(figure_path)
-        plt.close(figure)
-        img = plt.imread(figure_path)
-        # model.log_image('test', img, iter_no)
-
-    # iter_time_end = time.time()
-    #
-    # if iter_no % n_step_console_log == 0:
-    #     print('Single Iter Time: %.4f' % (iter_time_end - iter_time_start))
+            iter_time_end = time.time()
+            if self.is_console_log_step():
+                print('Single Iter Time: %.4f' % (iter_time_end - iter_time_start))

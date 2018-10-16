@@ -1,13 +1,19 @@
 from __future__ import print_function
+
+import os
+
+import torch as tr
 from torch import nn
 from torch.nn import init
 
-n_batch_logits = 32
+import paths
+from utils import bash_utils
 
 
 class BaseModel(nn.Module):
-    def __init__(self):
+    def __init__(self, name=None):
         super(BaseModel, self).__init__()
+        self.name = str(self) if name is None else name
 
     @classmethod
     def copy(cls, model):
@@ -23,10 +29,24 @@ class BaseModel(nn.Module):
 
         self.apply(init_fn)
 
+    def get_params_path(self, dir_name, weight_label, iter_no=None):
+        return paths.get_saved_params_path(dir_name, self.name, weight_label, iter_no) + '.pt'
+
+    def save_params(self, dir_name, weight_label, iter_no=None):
+        state_dict = self.state_dict()
+        path = self.get_params_path(dir_name, weight_label, iter_no)
+        bash_utils.create_dir(os.path.dirname(path))
+        tr.save(state_dict, path)
+
+    def load_params(self, dir_name, weight_label, iter_no=None):
+        path = self.get_params_path(dir_name, weight_label, iter_no)
+        state_dict = tr.load(path)
+        self.load_state_dict(state_dict)
+
 
 class BaseGan(BaseModel):
-    def __init__(self):
-        super(BaseGan, self).__init__()
+    def __init__(self, name=None):
+        super(BaseGan, self).__init__(name)
 
     def step_train_generator(self, z):
         return NotImplementedError

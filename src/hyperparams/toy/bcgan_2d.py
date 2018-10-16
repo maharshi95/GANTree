@@ -1,5 +1,5 @@
 import tensorflow as tf
-from hyperparams import base
+from base import hyperparams as base
 
 
 class Hyperparams(base.Hyperparams):
@@ -20,7 +20,7 @@ class Hyperparams(base.Hyperparams):
 
     z_bounds = 4.0
 
-    show_visual_while_training = True
+    # show_visual_while_training = True
 
     train_generator_adv = True
     train_autoencoder = True

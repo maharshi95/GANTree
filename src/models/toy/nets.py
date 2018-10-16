@@ -50,11 +50,17 @@ class ToyDisc(BaseModel):
         batch_logits = self.batch_logit_block(inter_view)
         return sample_logits, batch_logits
 
+    def discriminate(self, x):
+        with tr.no_grad():
+            inter = self.common_block(x)
+            sample_logits = self.sample_logit_block(inter)
+            preds = sample_logits >= 0.
+            return preds[:, 0]
+
 
 class ToyGAN(BaseGan):
     def __init__(self, name, encoder=None, decoder=None, disc=None):
-        super(ToyGAN, self).__init__()
-        self.name = name
+        super(ToyGAN, self).__init__(name)
         self.encoder = encoder or ToyEncoder()
         self.decoder = decoder or ToyDecoder()
         self.disc = disc or ToyDisc()
@@ -70,7 +76,7 @@ class ToyGAN(BaseGan):
 
     def classify(self, x):
         sample_logits, _ = self.disc(x)
-        return 1 * (sample_logits >= 0.5)
+        return 1 * (sample_logits >= 0.)
 
     def get_accuracies(self, x, z):
         with tr.no_grad():
@@ -79,7 +85,7 @@ class ToyGAN(BaseGan):
 
             gen_accuracy = 100 * (fake_labels == 1).type(tr.FloatTensor).mean()
             disc_accuracy = 50 * ((fake_labels == 0).type(tr.FloatTensor).mean() + (real_labels == 1).type(tr.FloatTensor).mean())
-        return gen_accuracy, disc_accuracy
+            return gen_accuracy, disc_accuracy
 
     def disc_adv_loss(self, x, z):
         sample_logits_real, batch_logits_real = self.disc(x)
@@ -112,15 +118,18 @@ class ToyGAN(BaseGan):
 
         return loss
 
-    def cyclic_loss(self, x, z):
+    def x_recon_loss(self, x):
         x_recon = self.decoder(self.encoder(x))
-        z_recon = self.encoder(self.decoder(z))
-
         x_recon_loss = tr.mean((x - x_recon) ** 2)
+        return x_recon_loss
+
+    def z_recon_loss(self, z):
+        z_recon = self.encoder(self.decoder(z))
         z_recon_loss = tr.mean((z - z_recon) ** 2)
+        return z_recon_loss
 
-        c_loss = x_recon_loss + z_recon_loss
-
+    def cyclic_loss(self, x, z):
+        c_loss = self.x_recon_loss(x) + self.z_recon_loss(z)
         return c_loss
 
     def step_train_discriminator(self, x, z):
@@ -165,24 +174,44 @@ class ToyGAN(BaseGan):
 
         return x_clf_loss
 
+    def compute_metrics(self, x, z):
+        with tr.no_grad():
+            x_recon_loss = self.x_recon_loss(x)
+            z_recon_loss = self.z_recon_loss(z)
+            c_loss = x_recon_loss + z_recon_loss
+            g_acc, d_acc = self.get_accuracies(x, z)
+
+            return {
+                'loss_x_recon': x_recon_loss,
+                'loss_z_recon': z_recon_loss,
+                'loss_cyclic': c_loss,
+                'accuracy_gen': g_acc,
+                'accuracy_disc': d_acc,
+            }
+
+    # DO NOT Use below functions for writing training procedures
     def encode(self, x_batch):
-        return self.encoder(x_batch)
+        with tr.no_grad():
+            return self.encoder(x_batch)
 
     def decode(self, z_batch):
-        return self.decode(z_batch)
+        with tr.no_grad():
+            return self.decoder(z_batch)
 
     def reconstruct_x(self, x_batch):
-        return self.decoder(self.encoder(x_batch))
+        with tr.no_grad():
+            return self.decoder(self.encoder(x_batch))
 
     def reconstruct_z(self, z_batch):
-        return self.encoder(self.decoder(z_batch))
+        with tr.no_grad():
+            return self.encoder(self.decoder(z_batch))
 
     def discriminate(self, x_batch, split=True):
-        preds, _ = self.disc(x_batch)  # sample_logits_real
-        preds = preds>=0
-        if split:
-            x_batch_real = x_batch[np.where(preds == 1)]
-            x_batch_fake = x_batch[np.where(preds == 0)]
-            return preds, x_batch_real, x_batch_fake
-        else:
-            return preds
+        with tr.no_grad():
+            preds = self.disc.discriminate(x_batch)  # sample_logits_real
+            if split:
+                x_batch_real = x_batch[np.where(preds == 1)]
+                x_batch_fake = x_batch[np.where(preds == 0)]
+                return preds, x_batch_real, x_batch_fake
+            else:
+                return preds

@@ -1,5 +1,5 @@
 import importlib
-from . import base
+import base.hyperparams as base
 
 
 class HyperparamsFactory:
