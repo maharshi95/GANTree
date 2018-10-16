@@ -69,6 +69,7 @@ class GanTrainer(BaseTrainer):
             'test': SummaryWriter(paths.log_writer_path('test')),
         }
 
+        # TODO: Increase the batch size of this seed data, to have better visualization
         self.test_seed = {
             'x': data_loader.next_batch('test'),
             'z': data_loader.get_z_dist(self.H.batch_size, dist_type=self.H.z_dist_type, bounds=self.H.z_bounds)
@@ -210,8 +211,8 @@ class GanTrainer(BaseTrainer):
                 plt.close(figure)
 
                 # TODO: Something wrong here, fix this
-                img = plt.imread(figure_path)
-                self.writer['test'].add_image('plot_iter', img, self.iter_no)
+                # img = plt.imread(figure_path)
+                # self.writer['test'].add_image('plot_iter', img, self.iter_no)
 
             # Switch Training Networks
             self.switch_train_mode(g_acc, d_acc)
