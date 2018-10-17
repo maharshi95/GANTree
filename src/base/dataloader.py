@@ -76,3 +76,14 @@ class BaseDataLoader(object):
         else:
             raise Exception('Invalid dist_type: {}'.format(dist_type))
         return data
+
+    @tensor_output(True)
+    def complete_data(self):
+        return np.concatenate((self.data['train'],self.data['test']),axis=0)
+
+
+    @tensor_output(True)
+    def train_data(self):
+        return self.data['train']
+
+

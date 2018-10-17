@@ -133,22 +133,20 @@ class ToyGAN(BaseGan):
         return c_loss
 
     def step_train_discriminator(self, x, z):
-        loss = self.disc_adv_loss(x, z)
-
         self.opt['disc'].zero_grad()
+        loss = self.disc_adv_loss(x, z)
         loss.backward()
 
         self.opt['disc'].step()
         return loss
 
     def step_train_autoencoder(self, x, z):
-        c_loss = self.cyclic_loss(x, z)
-
-        loss = c_loss
-
         self.opt['encoder'].zero_grad()
         self.opt['decoder'].zero_grad()
 
+        c_loss = self.cyclic_loss(x, z)
+
+        loss = c_loss
         loss.backward()
 
         self.opt['encoder'].step()
@@ -157,16 +155,17 @@ class ToyGAN(BaseGan):
         return loss
 
     def step_train_generator(self, z):
-        loss = self.gen_adv_loss(z)
         self.opt['decoder'].zero_grad()
+        loss = self.gen_adv_loss(z)
         loss.backward()
         self.opt['decoder'].step()
         return loss
 
     def step_train_x_clf(self, x1, x2, mu1, mu2, cov1, cov2):
-        x_clf_loss = losses.x_clf_loss(mu1, cov1, mu2, cov2, x1, x2)
-
         self.opt['encoder'].zero_grad()
+        z1 = self.encoder(x1)
+        z2 = self.encoder(x2)
+        x_clf_loss = losses.x_clf_loss(mu1, cov1, mu2, cov2, z1, z2)
 
         x_clf_loss.backward()
 
@@ -191,6 +190,9 @@ class ToyGAN(BaseGan):
 
     # DO NOT Use below functions for writing training procedures
     def encode(self, x_batch):
+        if len(x_batch)==0:
+            return tr.tensor([])
+
         with tr.no_grad():
             return self.encoder(x_batch)
 

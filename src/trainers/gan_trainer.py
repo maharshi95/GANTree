@@ -14,6 +14,8 @@ from base.model import BaseGan
 from base.trainer import BaseTrainer
 from base.dataloader import BaseDataLoader
 from tensorboardX import SummaryWriter
+import imageio as im
+import numpy as np
 
 
 def get_x_plots_data(model, x_input):
@@ -29,17 +31,17 @@ def get_x_plots_data(model, x_input):
     z_recon_false = model.encode(x_recon_false)
 
     return [
-        (x_real_true, x_real_false),
-        (z_real_true, z_real_false),
-        (x_recon_true, x_recon_false),
-        (z_recon_true, z_recon_false)
+        (x_real_true.numpy(), x_real_false.numpy()),
+        (z_real_true.numpy(), z_real_false.numpy()),
+        (x_recon_true.numpy(), x_recon_false.numpy()),
+        (z_recon_true.numpy(), z_recon_false.numpy())
     ]
 
 
 def get_z_plots_data(model, z_input):
     x_input = model.decode(z_input)
     x_plots = get_x_plots_data(model, x_input)
-    return [z_input] + x_plots[:-1]
+    return [z_input.numpy()] + x_plots[:-1]
 
 
 TrainConfig = namedtuple(
@@ -69,7 +71,6 @@ class GanTrainer(BaseTrainer):
             'test': SummaryWriter(paths.log_writer_path('test')),
         }
 
-        # TODO: Increase the batch size of this seed data, to have better visualization
         self.test_seed = {
             'x': data_loader.next_batch('test'),
             'z': data_loader.get_z_dist(self.H.batch_size, dist_type=self.H.z_dist_type, bounds=self.H.z_bounds)
@@ -128,9 +129,6 @@ class GanTrainer(BaseTrainer):
         g_acc, d_acc = metrics['accuracy_gen'], metrics['accuracy_disc']
 
         print('Test Step', self.iter_no + 1)
-        print('Gen  Accuracy:', g_acc.item())
-        print('Disc Accuracy:', d_acc.item())
-
         print('Step %i: Disc Acc: %f' % (self.iter_no, metrics['accuracy_disc']))
         print('Step %i: Gen  Acc: %f' % (self.iter_no, metrics['accuracy_gen']))
         print('Step %i: x_recon Loss: %f' % (self.iter_no, metrics['loss_x_recon']))
@@ -176,19 +174,20 @@ class GanTrainer(BaseTrainer):
                 print('Gen  Accuracy:', g_acc.item())
                 print('Disc Accuracy:', d_acc.item())
 
-                print('Step %i: Disc Acc: %f' % (self.iter_no, metrics['accuracy_disc']))
-                print('Step %i: Gen  Acc: %f' % (self.iter_no, metrics['accuracy_gen']))
-                print('Step %i: x_recon Loss: %f' % (self.iter_no, metrics['loss_x_recon']))
-                print('Step %i: z_recon Loss: %f' % (self.iter_no, metrics['loss_z_recon']))
+                print('Step %i: Disc Acc: %f' % (self.iter_no, metrics['accuracy_disc'].item()))
+                print('Step %i: Gen  Acc: %f' % (self.iter_no, metrics['accuracy_gen'].item()))
+                print('Step %i: x_recon Loss: %f' % (self.iter_no, metrics['loss_x_recon'].item()))
+                print('Step %i: z_recon Loss: %f' % (self.iter_no, metrics['loss_z_recon'].item()))
                 print()
 
             # Tensorboard Log
             if self.is_tboard_log_step():
                 for tag, value in metrics.items():
-                    self.writer['train'].add_scalar(tag, value, self.iter_no)
+                    self.writer['train'].add_scalar(tag, value.item(), self.iter_no)
 
             # Validation Computations
-            if self.is_validation_step(): self.validation()
+            if self.is_validation_step():
+                self.validation()
 
             # Weights Saving
             if self.is_params_save_step():
@@ -210,9 +209,12 @@ class GanTrainer(BaseTrainer):
                 figure.savefig(figure_path)
                 plt.close(figure)
 
-                # TODO: Something wrong here, fix this
-                # img = plt.imread(figure_path)
-                # self.writer['test'].add_image('plot_iter', img, self.iter_no)
+                img = np.array(im.imread(figure_path), dtype=np.uint8)
+                img = img[:, :, :-1]
+                img = img.transpose(2, 0, 1)
+                img = np.expand_dims(img, 0)
+                # image = tr.from_numpy(img)
+                self.writer['test'].add_image('plot_iter', img, self.iter_no)
 
             # Switch Training Networks
             self.switch_train_mode(g_acc, d_acc)
@@ -220,3 +222,6 @@ class GanTrainer(BaseTrainer):
             iter_time_end = time.time()
             if self.is_console_log_step():
                 print('Single Iter Time: %.4f' % (iter_time_end - iter_time_start))
+
+
+

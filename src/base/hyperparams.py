@@ -43,5 +43,14 @@ class Hyperparams:
     z_dist_type = 'normal'  # ['uniform', 'normal', 'sphere']
 
     model = 'bcgan'
-    exp_name = 'trial'
+    exp_name = 'trial_with_gmms'
     dataloader = 'four_gaussian_sym'
+
+
+    n_child_nodes = 2
+
+    child_iter = 50
+
+
+
+

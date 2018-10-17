@@ -20,7 +20,7 @@ for node0: for each step:
     TRAIN node0.E and node0.D over cyclic_loss
     TRAIN node0.Di over disc_adv loss
     TRAIN node0.D over gen_adv loss
-    
+   
 node0.gmm = GaussianMixture(n_components=2)
 node0.gmm.fit(node0.encode(X[0]))
 split X into 2 labels: 1 and 2
