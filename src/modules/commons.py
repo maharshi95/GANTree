@@ -1,27 +1,9 @@
+from collections import namedtuple
+
+import torch as tr
 from torch import nn
-
-
-class ListModule(nn.Module):
-    def __init__(self, *args):
-        super(ListModule, self).__init__()
-        idx = 0
-        for module in args:
-            self.add_module(str(idx), module)
-            idx += 1
-
-    def __getitem__(self, idx):
-        if idx < 0 or idx >= len(self._modules):
-            raise IndexError('index {} is out of range'.format(idx))
-        it = iter(self._modules.values())
-        for i in range(idx):
-            next(it)
-        return next(it)
-
-    def __iter__(self):
-        return iter(self._modules.values())
-
-    def __len__(self):
-        return len(self._modules)
+from configs import Config
+from utils.tr_utils import ellipse_params, rotate
 
 
 class NLinear(nn.Sequential):
@@ -33,3 +15,65 @@ class NLinear(nn.Sequential):
             layers.append(nn.Linear(in_feat, out_feat))
 
         super(NLinear, self).__init__(*layers)
+        if Config.use_gpu:
+            self.cuda()
+
+
+ZParams = namedtuple('ZParams', 'means cov')
+
+
+class SingleZTransform(nn.Module):
+    def __init__(self, params):
+        super(SingleZTransform, self).__init__()
+
+        self.means, self.cov = params
+        self.th, self.a, self.b = ellipse_params(self.cov)
+
+    @property
+    def params(self):
+        return ZParams(self.means, self.cov)
+
+    @property
+    def inv_params(self):
+        return ZParams(-self.means, self.cov)
+
+    def normalize(self, x):
+        x -= self.means
+        x = rotate(x, - self.th)
+        x[:, 0] /= self.a
+        x[:, 1] /= self.b
+        return x
+
+    def denormalize(self, x):
+        x[:, 0] *= self.a
+        x[:, 1] *= self.b
+        x = rotate(x, self.th)
+        x += self.means
+        return x
+
+
+class ZTransform(nn.Module):
+    def __init__(self, src_params, target_params=None):
+        super(ZTransform, self).__init__()
+        if target_params is None:
+            target_params = tr.zeros_like(src_params[0]), tr.eye(src_params[0].shape[0])
+        self.src_transform = SingleZTransform(src_params)
+        self.target_transform = SingleZTransform(target_params)
+
+    @property
+    def src_params(self):
+        return self.src_transform.params
+
+    @property
+    def target_params(self):
+        return self.src_transform.params
+
+    def forward(self, x):
+        x = self.src_transform.normalize(x)
+        x = self.target_transform.denormalize(x)
+        return x
+
+    def inv(self, x):
+        x = self.target_transform.normalize(x)
+        x = self.src_transform.denormalize(x)
+        return x

@@ -15,10 +15,9 @@ class BaseModel(nn.Module):
         super(BaseModel, self).__init__()
         self.name = str(self) if name is None else name
 
-    @classmethod
-    def copy(cls, model):
-        module = cls()
-        module.load_state_dict(model.state_dict())
+    def copy(self):
+        module = self.__class__()
+        module.load_state_dict(self.state_dict())
         return module
 
     def init_params(self):
@@ -48,11 +47,17 @@ class BaseGan(BaseModel):
     def __init__(self, name=None):
         super(BaseGan, self).__init__(name)
 
-    def step_train_generator(self, z):
+    def step_train_generator(self, x, z):
         return NotImplementedError
 
     def step_train_discriminator(self, x, z):
         return NotImplementedError
 
     def step_train_autoencoder(self, x, z):
+        return NotImplementedError
+
+    def step_train_encoder(self, x, z):
+        return NotImplementedError
+
+    def step_train_decoder(self, x, z):
         return NotImplementedError

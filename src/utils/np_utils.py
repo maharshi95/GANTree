@@ -24,3 +24,19 @@ def one_hot(labels, n_classes):
 
 def shuffled_copy(inputs):
     return inputs[np.random.permutation(inputs.shape[0])]
+
+
+def ellipse_params(means, cov, scale=3):
+    trace = np.trace(cov)
+    det = np.linalg.det(cov)
+    a = np.sqrt((trace + np.sqrt(trace ** 2 - 4 * det)) / 2.0)
+    b = np.sqrt((trace - np.sqrt(trace ** 2 - 4 * det)) / 2.0)
+    theta = np.arctan2(2 * cov[0, 1], cov[0, 0] - cov[1, 1]) / 2.0
+    return means, theta, 2 * a * scale, 2 * b * scale
+
+
+def rotate(X, theta):
+    ct, st = np.cos(theta), np.sin(theta)
+    R = np.array([[ct, -st],
+                  [st, ct]])
+    return np.matmul(X, R.T)

@@ -16,9 +16,9 @@ class DataLoaderFactory(object):
     }
 
     @classmethod
-    def get_dataloader(cls, name, input_size=1, latent_size=1, *args):
-        # type: (str, int, int) -> BaseDataLoader
+    def get_dataloader(cls, name, input_size=1, latent_size=1, *args, **kwargs):
+        # type: (str, int, int, *tuple, **dict) -> BaseDataLoader
         DL = cls.__dict[name]
         if name == 'mnist':
             return DL()
-        return DL(input_size, latent_size, *args)
+        return DL(input_size, latent_size, *args, **kwargs)

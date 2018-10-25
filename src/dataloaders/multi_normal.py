@@ -25,6 +25,7 @@ class TwoGaussiansDataLoader(BaseDataLoader):
 
 def generate_multi_gaussian_samples(means, cov, ratio, num_samples):
     X = []
+    labels = []
     count_samples = 0
     for i in range(4):
         if i < 3:
@@ -34,10 +35,14 @@ def generate_multi_gaussian_samples(means, cov, ratio, num_samples):
             n_samples = num_samples - count_samples
         samples = np.random.multivariate_normal(np.array(means[i]), cov=np.eye(means.shape[-1]) * cov[i], size=n_samples)
         X.append(samples)
+        labels.extend([i] * n_samples)
 
     X = np.concatenate(X)
-    np.random.shuffle(X)
-    return X
+    labels = np.array(labels)
+    perm = np.random.permutation(X.shape[0])
+    X = X[perm]
+    labels = labels[perm]
+    return X, labels
 
 
 class FourGaussiansDataLoader(BaseDataLoader):
@@ -61,8 +66,9 @@ class FourGaussiansDataLoader(BaseDataLoader):
 
 
 class FourSymGaussiansDataLoader(BaseDataLoader):
-    def __init__(self, input_size=1, latent_size=2, train_batch_size=32, test_batch_size=32):
-        super(FourSymGaussiansDataLoader, self).__init__(input_size, latent_size, train_batch_size, test_batch_size)
+    def __init__(self, input_size=1, latent_size=2, train_batch_size=32, test_batch_size=32, *args, **kwargs):
+        super(FourSymGaussiansDataLoader, self).__init__(input_size, latent_size, train_batch_size, test_batch_size, *args,
+                                                         **kwargs)
 
     def get_data(self, train_ratio=0.6):
         num_samples = 20000
@@ -71,10 +77,11 @@ class FourSymGaussiansDataLoader(BaseDataLoader):
         sigma = np.array([0.1, 0.1, 0.1, 0.1])
         ratio = np_utils.prob_dist([1, 1, 1, 1])
 
-        X = generate_multi_gaussian_samples(means=mu, cov=sigma, ratio=ratio, num_samples=num_samples)
+        X, labels = generate_multi_gaussian_samples(means=mu, cov=sigma, ratio=ratio, num_samples=num_samples)
 
         n_train = int(train_ratio * X.shape[0])
 
-        training, test = X[:n_train, :], X[n_train:, :]
+        training_data, test_data = X[:n_train, :], X[n_train:, :]
+        training_labels, test_labels = labels[:n_train], labels[n_train:]
 
-        return training, test
+        return training_data, test_data, training_labels, test_labels

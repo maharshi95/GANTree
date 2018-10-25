@@ -6,8 +6,8 @@ def x_clf_loss(means1, cov1, means2, cov2, z1, z2):
     f1 = dist.MultivariateNormal(means1, cov1)
     f2 = dist.MultivariateNormal(means2, cov2)
 
-    f2_z1 = tr.distributions.exponential(f2.log_prob(z1))
-    f1_z1 = tr.distributions.exponential(f1.log_prob(z1))
+    f2_z1 = dist.exponential(f2.log_prob(z1))
+    f1_z1 = dist.exponential(f1.log_prob(z1))
 
     f2_z1_mask = tr.stack([p>0.3 for p in f2_z1])
     f1_z1_mask = tr.stack([p<0.7 for p in f1_z1])
@@ -15,8 +15,8 @@ def x_clf_loss(means1, cov1, means2, cov2, z1, z2):
     f2_z1_masked = sum(tr.mul(f2.log_prob(z1),f2_z1_mask))
     f1_z1_masked = sum(tr.mul(f1.log_prob(z1),f1_z1_mask))
 
-    f1_z2 = tr.distributions.exponential(f2.log_prob(z2))
-    f2_z2 = tr.distributions.exponential(f2.log_prob(z2))
+    f1_z2 = dist.exponential(f2.log_prob(z2))
+    f2_z2 = dist.exponential(f2.log_prob(z2))
 
     f1_z2_mask = tr.stack([p>0.3 for p in f1_z2])
     f2_z2_mask = tr.stack([p<0.7 for p in f2_z2])

@@ -46,7 +46,7 @@ REPEAT for k iters:
 {
     REPEAT for a iters 
     {
-        node = sample(node1, node2)
+        node = sample(node1, node2) with prior probabilities
         
         z ~ N(node.mu, node.cov)
         x ~ X[node.id]
@@ -58,20 +58,15 @@ REPEAT for k iters:
         TRAIN node.E over x_clf_loss
     }
     
-    z1 = node1.E(X[1])
-    z2 = node2.E(X[2])
+    gmm0 = GaussianMixture(n_components=2)
+    gmm0.fit(node0.post_gmm_encoder.encode(X[0]))
+    split X into 2 labels: 1 and 2
     
-    gmm1 = GaussianMixture(n_components=1)
-    gmm1.fit(z1)
+    node1.mu = gmm0.means_[0]
+    node2.mu = gmm0.means_[1]
     
-    gmm2 = GaussianMixture(n_components=1)
-    gmm2.fit(z2)
-    
-    node1.mu = gmm1.means_
-    node2.mu = gmm2.means_
-    
-    node1.cov = gmm1.cov_
-    node2.cov = gmm2.cov_
+    node1.cov = gmm0.cov_[0]
+    node2.cov = gmm0.cov_[1]
 }
 
 Generalize above in a recursive way for each split

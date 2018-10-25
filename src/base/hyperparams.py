@@ -1,15 +1,12 @@
-import torch as tr
-
-
 class Hyperparams:
     """
     Base Hyperparams class.
     It uses base version of bcgan with 1D x space and z space
     """
-    dtype = tr.float32
+    dtype = float
 
     # Trainer parameters:
-    n_iterations = 2000
+    n_iterations = 30000
 
     show_visual_while_training = True
     train_generator_adv = True
@@ -19,16 +16,16 @@ class Hyperparams:
     train_sample_logits = True
 
     start_tensorboard = True
-    base_port = 7001
 
-    gen_iter_count = 10
-    disc_iter_count = 30
+    gen_iter_count = 50
+    disc_iter_count = 10
     step_ratio = gen_iter_count, disc_iter_count
 
     gan_switching_criteria = 'dynamic'  # ['fixed' / 'dynamic']
 
     # Dimension Parameters
     batch_size = 128
+    seed_batch_size = 1024
     logit_batch_size = 64
 
     input_size = 2
@@ -46,11 +43,6 @@ class Hyperparams:
     exp_name = 'trial_with_gmms'
     dataloader = 'four_gaussian_sym'
 
-
     n_child_nodes = 2
 
     child_iter = 50
-
-
-
-

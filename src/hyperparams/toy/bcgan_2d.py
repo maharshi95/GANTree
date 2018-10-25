@@ -1,8 +1,8 @@
 import tensorflow as tf
-from base import hyperparams as base
+from base import hyperparams as base_hp
 
 
-class Hyperparams(base.Hyperparams):
+class Hyperparams(base_hp.Hyperparams):
     dtype = tf.float32
 
     batch_size = 64
