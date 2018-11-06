@@ -1,10 +1,15 @@
-import os, argparse, logging, json
+from __future__ import print_function, division
 import torch as tr
+import os, argparse, logging, json
 from configs import Config, TrainConfig
+from exp_context import ExperimentContext
+
+print('mode:', 'gpu' if Config.use_gpu else 'cpu')
 
 if Config.use_gpu:
-    print('mode: GPU')
     tr.set_default_tensor_type('torch.cuda.FloatTensor')
+
+#### **Argument Parser**
 
 parser = argparse.ArgumentParser()
 
@@ -20,76 +25,93 @@ parser.add_argument('-hp', '--hyperparams', required=True, help='hyperparam clas
 parser.add_argument('-en', '--exp_name', default=None, help='experiment name. if not provided, it is taken from Hyperparams')
 
 args = parser.parse_args()
+print(json.dumps(args.__dict__, indent=4))
 
 resume_flag = args.resume is not False
+gpu_idx = str(args.gpu)
+os.environ['CUDA_VISIBLE_DEVICES'] = gpu_idx
 
-from exp_context import ExperimentContext
+#### **Set Experiment Context**
 
 ExperimentContext.set_context(args.hyperparams, args.exp_name)
 H = ExperimentContext.Hyperparams  # type: Hyperparams
+
+#### **Set Logging**
 
 logger = logging.getLogger(__name__)
 LOG_FORMAT = "[{}: %(filename)s: %(lineno)3s] %(levelname)s: %(funcName)s(): %(message)s".format(ExperimentContext.exp_name)
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
-gpu_idx = str(args.gpu)
+#### **Clear Logs and Results based on the argument flags**
 
-os.environ['CUDA_VISIBLE_DEVICES'] = gpu_idx
-
-import paths
+from paths import Paths
 from utils import bash_utils, model_utils
 
 if 'all' in args.delete or 'logs' in args.delete or resume_flag is False:
     logger.warning('Deleting Logs...')
-    bash_utils.delete_recursive(paths.logs_base_dir)
+    bash_utils.delete_recursive(Paths.logs_base_dir)
     print('')
 
 if 'all' in args.delete or 'results' in args.delete:
-    logger.warning('Deleting all results in {}...'.format(paths.results_base_dir))
-    bash_utils.delete_recursive(paths.results_base_dir)
+    logger.warning('Deleting all results in {}...'.format(Paths.results_base_dir))
+    bash_utils.delete_recursive(Paths.results_base_dir)
     print('')
 
+##### **Create required directories**
+
 model_utils.setup_dirs()
+
+##### **Model and Training related imports**
 
 from dataloaders.factory import DataLoaderFactory
 from base.hyperparams import Hyperparams
 
+from models.toy.gt.gantree import GanTree
+from models.toy.gt.named_tuples import DistParams
 from models.toy.gan import ToyGAN
-from trainers.gan_trainer import GanTrainer
 
-tboard_port = bash_utils.find_free_port(Config.base_port)
+##### **Tensorboard Port**
+
+ip = bash_utils.get_ip_address()
+tboard_port = str(bash_utils.find_free_port(Config.base_port))
+bash_utils.launchTensorBoard(Paths.logs_base_dir, tboard_port)
+address = '{ip}:{port}'.format(ip=ip, port=tboard_port)
+address_str = 'http://{}'.format(address)
+tensorboard_msg = "Tensorboard active at http://%s:%s" % (ip, tboard_port)
+
+##### **Dump Hyperparams file the experiments directory**
+
+hyperparams_string_content = json.dumps(H.__dict__, default=lambda x: repr(x), indent=4, sort_keys=True)
+# print(hyperparams_string_content)
+with open(Paths.exp_hyperparams_file, "w") as fp:
+    fp.write(hyperparams_string_content)
+
+##### **Define Train Config**
 
 train_config = TrainConfig(
     n_step_tboard_log=50,
-    n_step_console_log=500,
+    n_step_console_log=-1,
     n_step_validation=100,
     n_step_save_params=1000,
-    n_step_visualize=2000
+    n_step_visualize=500
 )
-cor = -0.6
-z_op_params = tr.zeros(H.z_size), tr.Tensor([[1.0, cor],
-                                             [cor, 1.0]])
-gan = ToyGAN('gan', z_op_params, z_bounds=H.z_bounds)
+
+##### **Create Gan Model and DataLoader for root GNode**
+
+gan = ToyGAN.create_from_hyperparams('node0', H, '0')
+dist_params = DistParams(gan.z_op_params[0], gan.z_op_params[1], 1.0, 1.0)
 dl = DataLoaderFactory.get_dataloader(H.dataloader, H.input_size, H.z_size, H.batch_size, H.batch_size, supervised=True)
-trainer = GanTrainer(data_loader=dl, model=gan, hyperparams=H, train_config=train_config)
+x_batch, _ = dl.random_batch('test', 2048)
 
-# Dump Hyperparams file the experiments directory
-hyperparams_string_content = json.dumps(H.__dict__, default=lambda x: repr(x), indent=4, sort_keys=True)
-print(hyperparams_string_content)
-with open(paths.exp_hyperparams_file, "w") as fp:
-    fp.write(hyperparams_string_content)
+##### **Create Gan Tree and GNode**G
 
+tree = GanTree('gtree', ToyGAN, H, x_batch)
+gnode = tree.create_child_node(dist_params, gan)
 
-def launchTensorBoard(path, port, blocking=False):
-    if blocking:
-        import os
-        os.system('tensorboard --logdir {} --port {}'.format(path, port))
-    else:
-        import threading
-        t = threading.Thread(target=launchTensorBoard, args=([path, port, True]))
-        t.start()
+##### **Set Trainer for GNode**
 
+gnode.set_trainer(dl, H, train_config)
 
-launchTensorBoard(paths.logs_base_dir, tboard_port)
-msg = "Tensorboard active at http://%s:%s" % (bash_utils.get_ip_address(), str(tboard_port))
-trainer.train(msg)
+print(tensorboard_msg)
+
+gnode.train(30000)

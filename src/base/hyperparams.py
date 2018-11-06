@@ -1,3 +1,6 @@
+import torch as tr
+
+
 class Hyperparams:
     """
     Base Hyperparams class.
@@ -6,7 +9,7 @@ class Hyperparams:
     dtype = float
 
     # Trainer parameters:
-    n_iterations = 30000
+    n_iterations = 10000
 
     show_visual_while_training = True
     train_generator_adv = True
@@ -17,32 +20,56 @@ class Hyperparams:
 
     start_tensorboard = True
 
-    gen_iter_count = 50
-    disc_iter_count = 10
+    circular_bounds = False
+
+    gen_iter_count = 40
+    disc_iter_count = 40
     step_ratio = gen_iter_count, disc_iter_count
 
-    gan_switching_criteria = 'dynamic'  # ['fixed' / 'dynamic']
+    disc_type = 'x'  # 'x' or 'z' or 'xz'
 
     # Dimension Parameters
-    batch_size = 128
+    batch_size = 1024
     seed_batch_size = 1024
-    logit_batch_size = 64
+
+    logit_x_batch_size = 4
+    logit_z_batch_size = 1
 
     input_size = 2
     z_size = 2
-    z_bounds = 4.0
+
+    # Distribution params
+    z_bounds = 10.0
+    cor = 0.6
 
     # Learning Parameters
-    lr_autoencoder = 0.0005
-    lr_decoder = 0.0005
-    lr_disc = 0.0005
+    lr_autoencoder = 0.0003
+    lr_decoder = 0.0003
+    lr_disc = 0.0003
 
     z_dist_type = 'normal'  # ['uniform', 'normal', 'sphere']
 
     model = 'bcgan'
     exp_name = 'trial_with_gmms'
-    dataloader = 'four_gaussian_sym'
+
+    # dataloader = 'four_gaussian_sym'
+    dataloader = 'four_gaussian'
 
     n_child_nodes = 2
 
     child_iter = 50
+
+    @classmethod
+    def z_means(cls):
+        return tr.zeros(cls.z_size)
+
+    @classmethod
+    def z_cov(cls, sign='0'):
+        cov = tr.eye(cls.z_size)
+        cor = {
+            '+': cls.cor,
+            '-': -cls.cor,
+            '0': 0.0
+        }[sign]
+        cov[0, 1] = cov[1, 0] = cor
+        return cov

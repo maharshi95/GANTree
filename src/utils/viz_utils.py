@@ -1,11 +1,60 @@
+import collections
+from sys import pydebug
+
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-from matplotlib import cm
+from matplotlib import cm, pyplot as plt
+from matplotlib.patches import Ellipse
 from mpl_toolkits.mplot3d import Axes3D
+from sklearn.mixture import GaussianMixture
+
 from exp_context import ExperimentContext
+from utils import np_utils
+from utils.tr_utils import as_np
 
 H = ExperimentContext.Hyperparams
+
+bounds = 10
+
+
+def scatter_2d(ax, data, s=0.5, c=None, marker=None, linewidths=None, *args, **kwargs):
+    return ax.scatter(data[:, 0], data[:, 1], s=s, c=c, marker=None, linewidths=linewidths, *args, **kwargs)
+
+
+def plot_ellipse(ax, means, cov, scales=3.0, color='red'):
+    e = get_ellipse(means, cov, scales, color=color)
+    return ax.add_artist(e)
+
+
+def get_random_colors(k):
+    colors = cm.rainbow(np.linspace(0, 1, k))
+    return colors
+
+
+def get_ellipse(means, cov, scales=3.0, alpha=0.25, color='yellow'):
+    if not isinstance(scales, collections.Iterable):
+        center, theta, width, height = np_utils.ellipse_params(means, cov, scale=scales)
+        return Ellipse(center, width, height, np.rad2deg(theta), alpha=alpha, color=color)
+
+    ellipses = []
+    for scale in scales:
+        center, theta, width, height = np_utils.ellipse_params(means, cov, scale=scale)
+        e = Ellipse(center, width, height, np.rad2deg(theta), alpha=alpha, color=color)
+        ellipses.append(e)
+    return ellipses
+
+
+def plot_ellipses(ax, gmm, scales):
+    n = gmm.n_components
+    colors = get_random_colors(n)
+    for i in range(n):
+        ellipses = get_ellipse(gmm.means_[i], gmm.covariances_[i], scales, color=colors[i])
+        if isinstance(ellipses, list):
+            for e in ellipses:
+                ax.add_artist(e)
+        else:
+            ax.add_artist(ellipses)
 
 
 def hist(ax, X, binwidth=0.2, color=None):
@@ -37,9 +86,10 @@ def plot_points(ax, data, scatter_size=3):
 
 def plot_clusters(ax, data, labels, scatter_size=3):
     labels = labels.astype(int)
+    indices = map(lambda l: list(set(labels)).index(l), labels)
     n_labels = len(set(labels))
     colors = cm.rainbow(np.linspace(0, 1, n_labels))
-    ax.scatter(data[:, 0], data[:, 1], c=colors[labels], s=scatter_size)
+    ax.scatter(data[:, 0], data[:, 1], c=colors[indices], s=scatter_size)
 
 
 def get_axes(gs_item, axes3d=False):
@@ -48,8 +98,8 @@ def get_axes(gs_item, axes3d=False):
         ax = plt.subplot(gs_item, projection='3d')
     else:
         ax = plt.subplot(gs_item)
-    ax.set_xlim(-4, 4)
-    ax.set_ylim(-4, 4)
+    ax.set_xlim(-bounds, bounds)
+    ax.set_ylim(-bounds, bounds)
     return ax
 
 
@@ -61,6 +111,14 @@ def get_figure(data, scatter_size=3, margin=0.05):
 
     rows = data
 
+    z_data, zt_data = rows[-1]
+    gmm = GaussianMixture(2)
+    gmmt = GaussianMixture(2)
+
+    gmm.fit(z_data)
+    gmmt.fit(zt_data)
+
+    # X-Z-X-Z iteration with real and full space
     for i in [0, 3]:
         x_real, z_real, zt_real, x_recon, z_recon, zt_recon = rows[i]
         x_3d = x_real[0].shape[-1] == 3
@@ -72,6 +130,7 @@ def get_figure(data, scatter_size=3, margin=0.05):
             ax[j] = get_axes(gs[i * n_cols + j], _3d[j])
             plot_points(ax[j], data, scatter_size)
 
+    # Z-X-Z-X iteration with real and full space
     for i in [1]:
         z_rand, x_real, z_real, zt_real, x_recon, z_recon = rows[i]
         x_3d = x_real[0].shape[-1] == 3
@@ -94,6 +153,7 @@ def get_figure(data, scatter_size=3, margin=0.05):
             ax[j] = get_axes(gs[i * n_cols + j], _3d[j])
             plot_points(ax[j], rows[i][j], scatter_size)
 
+    # X-Z-X-Z iteration with real x with cluster colours
     for i in [2]:
         row = rows[i]
         # x, z, zt, x_, z_, zt_, l = rows[i]
@@ -106,6 +166,82 @@ def get_figure(data, scatter_size=3, margin=0.05):
         ax = [None] * n_cols
         for j in range(n_cols):
             ax[j] = get_axes(gs[i * n_cols + j], _3d[j])
+
             plot_clusters(ax[j], row[j], l, scatter_size)
+
+        plot_ellipses(ax[4], gmm, [1, 2, 3])
+        plot_ellipses(ax[5], gmmt, [1, 2, 3])
+
+    return fig
+
+
+def get_x_clf_figure(plot_data):
+    [[
+        [x_batch, labels],
+        [root_means, root_cov, _, _],
+        [ch0_means, ch0_cov, _, _],
+        [ch1_means, ch1_cov, _, _]
+    ], [
+        z_batch_pre,
+        z_batch_post,
+        x_recon_pre,
+        x_recon_post
+    ], [
+        z_rand0,
+        x_fake0,
+        z_rand1,
+        x_fake1,
+
+    ]] = plot_data
+    b = 9
+    colors = get_random_colors(4)
+    colors = colors[labels]
+
+    fig = plt.figure(figsize=(12, 12))
+
+    ax = fig.add_subplot(331)
+    ax.set_xlim(-b, b)
+    ax.set_ylim(-b, b)
+    scatter_2d(ax, x_batch, c=colors)
+
+    ax = fig.add_subplot(332)
+    ax.set_xlim(-b, b)
+    ax.set_ylim(-b, b)
+    scatter_2d(ax, x_recon_post, c=colors)
+
+    ax = fig.add_subplot(333)
+    ax.set_xlim(-b, b)
+    ax.set_ylim(-b, b)
+    scatter_2d(ax, z_batch_post, c=colors)
+    plot_ellipse(ax, ch0_means, ch0_cov, color='red')
+    plot_ellipse(ax, ch1_means, ch1_cov, color='blue')
+
+    ax = fig.add_subplot(334)
+    ax.set_xlim(-b, b)
+    ax.set_ylim(-b, b)
+    scatter_2d(ax, x_batch)
+
+    ax = fig.add_subplot(335)
+    ax.set_xlim(-b, b)
+    ax.set_ylim(-b, b)
+    scatter_2d(ax, x_recon_pre, c=colors)
+
+    ax = fig.add_subplot(336)
+    ax.set_xlim(-b, b)
+    ax.set_ylim(-b, b)
+    scatter_2d(ax, z_batch_pre, c=colors)
+    plot_ellipse(ax, root_means, root_cov, color='red')
+
+    ax = fig.add_subplot(337)
+    ax.set_xlim(-b, b)
+    ax.set_ylim(-b, b)
+    scatter_2d(ax, z_rand0, c='red')
+    scatter_2d(ax, z_rand1, c='blue')
+
+    ax = fig.add_subplot(338)
+    ax.set_xlim(-b, b)
+    ax.set_ylim(-b, b)
+    scatter_2d(ax, x_fake0, c='red')
+    scatter_2d(ax, x_fake1, c='blue')
 
     return fig

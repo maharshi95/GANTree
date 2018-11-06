@@ -28,35 +28,40 @@ class SingleZTransform(nn.Module):
 
         self.means, self.cov = params
         self.th, self.a, self.b = ellipse_params(self.cov)
+        self.scale = tr.tensor([self.a, self.b], dtype=tr.float32)
 
     @property
     def params(self):
         return ZParams(self.means, self.cov)
+
+    @params.setter
+    def params(self, value):
+        means, cov = value
+        self.means, self.cov = tr.Tensor(means), tr.Tensor(cov)
 
     @property
     def inv_params(self):
         return ZParams(-self.means, self.cov)
 
     def normalize(self, x):
-        x -= self.means
+        x = x - self.means
         x = rotate(x, - self.th)
-        x[:, 0] /= self.a
-        x[:, 1] /= self.b
+        x = x / self.scale
         return x
 
     def denormalize(self, x):
-        x[:, 0] *= self.a
-        x[:, 1] *= self.b
+        x = x * self.scale
         x = rotate(x, self.th)
-        x += self.means
+        x = x + self.means
         return x
 
 
 class ZTransform(nn.Module):
     def __init__(self, src_params, target_params=None):
         super(ZTransform, self).__init__()
+        src_params = map(tr.tensor, src_params)
         if target_params is None:
-            target_params = tr.zeros_like(src_params[0]), tr.eye(src_params[0].shape[0])
+            target_params = tr.zeros(src_params[0].shape), tr.eye(src_params[0].shape[0])
         self.src_transform = SingleZTransform(src_params)
         self.target_transform = SingleZTransform(target_params)
 
@@ -66,7 +71,15 @@ class ZTransform(nn.Module):
 
     @property
     def target_params(self):
-        return self.src_transform.params
+        return self.target_transform.params
+
+    @src_params.setter
+    def src_params(self, value):
+        self.src_transform.params = value
+
+    @target_params.setter
+    def target_params(self, value):
+        self.target_transform.params = value
 
     def forward(self, x):
         x = self.src_transform.normalize(x)

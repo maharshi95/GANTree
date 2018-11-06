@@ -26,6 +26,10 @@ def shuffled_copy(inputs):
     return inputs[np.random.permutation(inputs.shape[0])]
 
 
+def random_select(inputs, n_samples):
+    return inputs[np.random.permutation(inputs.shape[0])[:n_samples]]
+
+
 def ellipse_params(means, cov, scale=3):
     trace = np.trace(cov)
     det = np.linalg.det(cov)

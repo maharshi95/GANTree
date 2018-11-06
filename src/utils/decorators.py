@@ -1,16 +1,18 @@
 import torch as tr
 import inspect
 
+from configs import Config
+
 
 def get_numpy(val):
     if isinstance(val, list) or isinstance(val, tuple):
         return map(get_numpy, val)
     if isinstance(val, tr.Tensor):
-        return val.cpu().numpy() if tr.cuda.is_available() else val.numpy()
+        return val.cpu().detach().numpy() if tr.cuda.is_available() else val.detach().numpy()
     return val
 
 
-def make_tensor(use_gpu=True):
+def make_tensor(use_gpu=Config.use_gpu):
     """
     A 2nd order decorator creator, for managing following things:
         - Adds an extra argument ``numpy=True`` to input function, if set False, returns torch.Tensor, else numpy.ndarray
@@ -36,6 +38,22 @@ def make_tensor(use_gpu=True):
 
             if numpy:
                 ret = map(get_numpy, ret) if isinstance(ret, tuple) else get_numpy(ret)
+            return ret
+
+        return inner_func
+
+    return inner_decorator
+
+
+def tensorify(use_gpu=Config.use_gpu):
+    def inner_decorator(orig_func):
+        def inner_func(self, *args, **kwargs):
+            args = map(lambda arg: tr.tensor(arg, dtype=tr.float32), args)
+            if use_gpu:
+                args = map(lambda arg: arg.cuda(), args)
+
+            ret = orig_func(self, *args, **kwargs)
+            ret = map(get_numpy, ret) if isinstance(ret, tuple) else get_numpy(ret)
             return ret
 
         return inner_func
@@ -71,3 +89,34 @@ def numpy_output(f):
         return ret
 
     return inner_func
+
+
+class ClassPropertyDescriptor(object):
+
+    def __init__(self, fget, fset=None):
+        self.fget = fget
+        self.fset = fset
+
+    def __get__(self, obj, klass=None):
+        if klass is None:
+            klass = type(obj)
+        return self.fget.__get__(obj, klass)()
+
+    def __set__(self, obj, value):
+        if not self.fset:
+            raise AttributeError("can't set attribute")
+        type_ = type(obj)
+        return self.fset.__get__(obj, type_)(value)
+
+    def setter(self, func):
+        if not isinstance(func, (classmethod, staticmethod)):
+            func = classmethod(func)
+        self.fset = func
+        return self
+
+
+def classproperty(func):
+    if not isinstance(func, (classmethod, staticmethod)):
+        func = classmethod(func)
+
+    return ClassPropertyDescriptor(func)

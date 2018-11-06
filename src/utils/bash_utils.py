@@ -81,3 +81,14 @@ def get_ip_address():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("8.8.8.8", 80))
     return s.getsockname()[0]
+
+
+def launchTensorBoard(path, port, blocking=False):
+    if blocking:
+        import os
+        os.system('tensorboard --logdir {} --port {}'.format(path, port))
+        print('Started tensorboard at http://%s:%s' % (get_ip_address(), str(port)))
+    else:
+        import threading
+        t = threading.Thread(target=launchTensorBoard, args=([path, port, True]))
+        t.start()

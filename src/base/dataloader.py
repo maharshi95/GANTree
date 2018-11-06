@@ -13,20 +13,21 @@ class BaseDataLoader(object):
         self.get_tensor = True
         self.supervised = supervised
 
-        if supervised:
-            train_data, test_data, train_labels, test_labels = self.get_data()
-            self.labels = {
-                'train': train_labels,
-                'test': test_labels,
-            }
-
-        else:
-            train_data, test_data = self.get_data()
-
         self.batch_size = {
             'train': train_batch_size,
             'test': test_batch_size
         }
+
+        all_data = self.get_data()
+
+        self.update_data(*all_data)
+
+    def update_data(self, train_data, test_data, train_labels=None, test_labels=None):
+        if self.supervised:
+            self.labels = {
+                'train': train_labels,
+                'test': test_labels,
+            }
 
         self.data = {
             'train': train_data,
@@ -59,7 +60,7 @@ class BaseDataLoader(object):
         end = start + self.batch_size[split]
         self.batch_index[split] = (self.batch_size[split] + 1) % self.n_batches[split]
 
-        if split == 'train' and self.batch_index[split] == 0:
+        if self.batch_index[split] == 0:
             self.shuffle(split)
 
         data = self.data[split][start: end]
