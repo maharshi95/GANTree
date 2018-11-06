@@ -77,7 +77,8 @@ model_utils.setup_dirs()
 from dataloaders.factory import DataLoaderFactory
 from base.hyperparams import Hyperparams
 
-from models.toy.gan import ToyGAN
+from models.images.gan import ImgGAN
+# TODO check
 from models.toy.gt.gantree import GanTree
 from models.toy.gt.gnode import GNode
 from models.toy.gt.utils import DistParams
@@ -123,7 +124,7 @@ def full_train_step(gnode, dl, visualize=True, validation=True, save_params=True
     :type gnode: GNode
     """
     trainer = gnode.trainer
-    model = gnode.gan  # type: ToyGAN
+    model = gnode.gan  # type: ImgGAN
     H = trainer.H
 
     trainer.iter_no += 1
@@ -364,7 +365,7 @@ def train_node(node, x_clf_iters=200, gan_iters=10000):
             print('Failed saving figure for iter %d' % iter_no)
 
 
-gan = ToyGAN.create_from_hyperparams('node0', H, '0')
+gan = ImgGAN.create_from_hyperparams('node0', H, '0')
 means = as_np(gan.z_op_params.means)
 cov = as_np(gan.z_op_params.cov)
 dist_params = DistParams(means=means, cov=cov, pi=1.0, prob=1.0)
@@ -373,7 +374,7 @@ dl = DataLoaderFactory.get_dataloader(H.dataloader, H.input_size, H.z_size, H.ba
 
 x_seed, l_seed = dl.random_batch('test', 2048)
 
-tree = GanTree('gtree', ToyGAN, H, x_seed)
+tree = GanTree('gtree', ImgGAN, H, x_seed)
 root = tree.create_child_node(dist_params, gan)
 
 root.set_trainer(dl, H, train_config)

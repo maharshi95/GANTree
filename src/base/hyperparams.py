@@ -36,7 +36,7 @@ class Hyperparams:
     logit_z_batch_size = 1
 
     input_size = 2
-    z_size = 2
+    z_size = 100
 
     # Distribution params
     z_bounds = 10.0
@@ -58,6 +58,10 @@ class Hyperparams:
     n_child_nodes = 2
 
     child_iter = 50
+
+    input_channel = 1
+    input_height = 32
+    input_width = 32
 
     @classmethod
     def z_means(cls):

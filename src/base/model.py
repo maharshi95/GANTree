@@ -25,6 +25,17 @@ class BaseModel(nn.Module):
             if isinstance(module, nn.Linear):
                 init.xavier_normal_(module.weight)
                 init.constant_(module.bias, 0.001)
+            elif isinstance(module,nn.Conv2d):
+                init.xavier_normal_(module.weight)
+                init.constant_(module.bias, 0.001)
+            elif isinstance(module,nn.ConvTranspose2d):
+                init.xavier_normal_(module.weight)
+                init.constant_(module.bias, 0.001)
+            elif isinstance(module,nn.BatchNorm2d):
+                init.normal_(module.weight, 1.0, 0.02)
+                init.constant_(module.bias, 0.0)
+
+
 
         self.apply(init_fn)
 
