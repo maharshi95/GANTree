@@ -53,7 +53,7 @@ class Hyperparams:
     exp_name = 'trial_with_gmms'
 
     # dataloader = 'four_gaussian_sym'
-    dataloader = 'four_gaussian'
+    dataloader = 'nine_gaussian'
 
     n_child_nodes = 2
 

@@ -2,21 +2,21 @@ from __future__ import print_function, division
 import os, argparse, logging, json
 
 import sys, time
-from multiprocessing import Pool
-from multiprocessing.pool import ApplyResult
+import numpy as np
+import torch as tr
+import matplotlib
+
+matplotlib.use('Agg')
 
 from tqdm import tqdm
-import numpy as np
-
-import torch as tr
+from multiprocessing import Pool
+from multiprocessing.pool import ApplyResult
 from matplotlib import pyplot as plt
-from configs import Config
-from dataloaders.custom_loader import CustomDataLoader
-from exp_context import ExperimentContext
-from utils.tr_utils import as_np
-from utils.viz_utils import get_x_clf_figure
 
-default_args_str = '-hp base/hyperparams.py -d all -en exp14_node_split -t'
+from configs import Config
+from exp_context import ExperimentContext
+
+default_args_str = '-hp base/hyperparams.py -d all -en exp15_nine_gaussians -t'
 
 if Config.use_gpu:
     print('mode: GPU')
@@ -58,7 +58,8 @@ os.environ['CUDA_VISIBLE_DEVICES'] = gpu_idx
 
 #### Clear Logs and Results based on the argument flags ####
 from paths import Paths
-from utils import bash_utils, model_utils
+from utils.tr_utils import as_np
+from utils import bash_utils, model_utils, viz_utils
 
 if 'all' in args.delete or 'logs' in args.delete or resume_flag is False:
     logger.warning('Deleting Logs...')
@@ -75,6 +76,7 @@ model_utils.setup_dirs()
 
 ##### Model and Training related imports
 from dataloaders.factory import DataLoaderFactory
+from dataloaders.custom_loader import CustomDataLoader
 from base.hyperparams import Hyperparams
 
 from models.toy.gan import ToyGAN
@@ -217,6 +219,7 @@ def relabel_samples(node):
 
     for i in node.child_ids:
         dl_set[i] = CustomDataLoader.create_from_parent(dl, full_data_tuples[i])
+        seed_data[i] = dl_set[i].random_batch('test', 2048)
 
 
 # nodes[1].update_dist_params(means=2 * np.ones(2), cov=np.eye(2), prior_prob=1)
@@ -245,8 +248,8 @@ def get_deep_type(obj):
     return str(type(obj))
 
 
-def get_plot_data(iter_no, node, x_batch, labels):
-    # type: (int, GNode, np.ndarray, np.ndarray) -> list
+def get_plot_data(node, x_batch, labels):
+    # type: (GNode, np.ndarray, np.ndarray) -> list
     z_batch_pre, z_batch_post, x_recon_pre, x_recon_post = get_x_clf_plot_data(node, x_batch)
 
     z_rand0 = node.get_child(0).sample_z_batch(x_batch.shape[0])
@@ -279,22 +282,33 @@ def get_plot_data(iter_no, node, x_batch, labels):
     return plot_data
 
 
-def generate_plots(plot_data, iter_no, tag):
-    fig = get_x_clf_figure(plot_data)
-    path = Paths.get_result_path('%s_%03d' % (tag, iter_no))
+def generate_plots(plot_data, iter_no, tag, model_name=None):
+    fig = viz_utils.get_x_clf_figure(plot_data)
+    path = Paths.get_result_path('%s_%05d' % (tag, iter_no), model_name)
     fig.savefig(path)
     plt.close(fig)
     return (iter_no, path)
 
 
 def visualize_plots(iter_no, node, x_batch, labels, tag):
-    plot_data = get_plot_data(iter_no, node, x_batch, labels)
-    future = pool.apply_async(generate_plots, (plot_data, iter_no, tag))
+    plot_data = get_plot_data(node, x_batch, labels)
+    # generate_plots(plot_data, iter_no, tag)
+    future = pool.apply_async(generate_plots, (plot_data, iter_no, tag, node.name))
     future_objects.append(future)
     return future
 
 
+def save_node(node, tag):
+    # type: (GNode) -> None
+    bash_utils.create_dir(Paths.weight_dir_path(''))
+    filename = '%s_%s.pt' % (node.name, tag) if tag else node.name + '.pt'
+    filepath = os.path.join(Paths.weight_dir_path(''), filename)
+    node.save(filepath)
+
+
 def train_phase_1(node, n_iterations):
+    x_seed, l_seed = seed_data[node.id]
+
     node.fit_gmm(x_seed)
     visualize_plots(iter_no=0, node=node, x_batch=x_seed, labels=l_seed, tag='x_clf_plots')
 
@@ -327,6 +341,7 @@ def is_gan_vis_iter(i):
 
 def train_phase_2(node, n_iterations):
     # type: (GNode, int) -> None
+    x_seed, l_seed = seed_data[node.id]
     with tqdm(total=n_iterations) as pbar:
         for iter_no in range(n_iterations):
             for i in node.child_ids:
@@ -351,11 +366,20 @@ def train_node(node, x_clf_iters=200, gan_iters=10000):
 
     future_objects = []  # type: list[ApplyResult]
 
+    bash_utils.create_dir(Paths.get_result_path('', node.name))
+
     train_phase_1(node, x_clf_iters)
+
+    for cid, cnode in node.child_nodes.items():
+        save_node(cnode, 'phase_1')
 
     relabel_samples(node)
 
     train_phase_2(node, gan_iters)
+
+    for cid, cnode in node.child_nodes.items():
+        save_node(cnode, 'full')
+
     # Logging the image savingh operations status
     for i, obj in enumerate(future_objects):
         iter_no, path = obj.get()
@@ -371,26 +395,29 @@ cov = as_np(gan.z_op_params.cov)
 dist_params = DistParams(means=means, cov=cov, pi=1.0, prob=1.0)
 
 dl = DataLoaderFactory.get_dataloader(H.dataloader, H.input_size, H.z_size, H.batch_size, H.batch_size, supervised=True)
-
 x_seed, l_seed = dl.random_batch('test', 2048)
-
 tree = GanTree('gtree', ToyGAN, H, x_seed)
 root = tree.create_child_node(dist_params, gan)
 
 root.set_trainer(dl, H, train_config)
 
-GNode.load('best_node.pickle', root)
-# root.train(10000)
-# root.save('best_node.pickle')
+GNode.load('9g_root.pickle', root)
+# root.train(20000)
+# root.save('9g_root.pickle')
 
 dl_set = {0: dl}
+seed_data = {
+    0: (x_seed, l_seed)
+}
 
 future_objects = []  # type: list[ApplyResult]
 
 pool = Pool(processes=16)
-
-root.save('best_root_phase1.pickle')
-root.get_child(0).save('best_child0_phase1.pickle')
-root.get_child(1).save('best_child1_phase1.pickle')
-# print('Iter: %d' % (iter_no + 1))
-print('Training Complete.')
+save_node(root, '')
+train_node(root, x_clf_iters=1000)
+#
+# root.save('best_root_phase1.pickle')
+# root.get_child(0).save('best_child0_phase1.pickle')
+# root.get_child(1).save('best_child1_phase1.pickle')
+# # print('Iter: %d' % (iter_no + 1))
+# print('Training Complete.')
