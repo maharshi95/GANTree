@@ -175,7 +175,7 @@ def get_figure(data, scatter_size=3, margin=0.05):
     return fig
 
 
-def get_x_clf_figure(plot_data):
+def get_x_clf_figure(plot_data, n_modes=9):
     [[
         [x_batch, labels],
         [root_means, root_cov, _, _],
@@ -194,7 +194,7 @@ def get_x_clf_figure(plot_data):
 
     ]] = plot_data
     b = 9
-    colors = get_random_colors(4)
+    colors = get_random_colors(n_modes)
     colors = colors[labels]
 
     fig = plt.figure(figsize=(12, 12))

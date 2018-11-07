@@ -348,11 +348,11 @@ class GanTrainer(BaseTrainer):
 
         # Visualization
         if visualize and self.is_visualization_step():
-            previous_backend = plt.get_backend()
-            plt.switch_backend('Agg')
+            # previous_backend = plt.get_backend()
+            # plt.switch_backend('Agg')
             self.visualize('train')
             self.visualize('test')
-            plt.switch_backend(previous_backend)
+            # plt.switch_backend(previous_backend)
 
         # Switch Training Networks - Gen | Disc
         self.switch_train_mode(g_acc, d_acc)
