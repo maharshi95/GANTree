@@ -27,14 +27,14 @@ def make_tensor(use_gpu=Config.use_gpu):
     def inner_decorator(orig_func):
         def inner_func(self, input_tensor, numpy=True, *args, **kwargs):
             if not isinstance(input_tensor, tr.Tensor):
-                input_tensor = tr.Tensor(input_tensor)
+                input_tensor = tr.tensor(input_tensor)
                 if use_gpu:
                     input_tensor = input_tensor.cuda()
 
             if len(input_tensor) > 0:
                 ret = orig_func(self, input_tensor, *args, **kwargs)
             else:
-                ret = tr.Tensor([])
+                ret = tr.tensor([])
 
             if numpy:
                 ret = map(get_numpy, ret) if isinstance(ret, tuple) else get_numpy(ret)

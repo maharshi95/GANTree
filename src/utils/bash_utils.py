@@ -6,8 +6,8 @@ import traceback
 logger = logging.getLogger(__name__)
 
 
-def exec_cmd(cmd, log=True, bg=False):
-    if log: logger.info(cmd)
+def exec_cmd(cmd, log_find=True, bg=False):
+    if log_find: logger.info(cmd)
     if bg:
         os.system('{} &'.format(cmd))
     else:
@@ -21,9 +21,9 @@ def wait(msg):
     raw_input()
 
 
-def create_dir(dir_path):
+def create_dir(dir_path, log_flag=True):
     cmd = 'mkdir -p {dir_path}'.format(dir_path=dir_path)
-    exec_cmd(cmd)
+    exec_cmd(cmd, log_flag)
 
 
 def clear_dir(dir_path):

@@ -290,12 +290,19 @@ def visualize_plots(iter_no, node, x_batch, labels, tag):
     return future
 
 
-def save_node(node, tag):
-    # type: (GNode) -> None
+def save_node(node, tag=''):
+    # type: (GNode, str) -> None
     bash_utils.create_dir(Paths.weight_dir_path(''))
     filename = '%s_%s.pt' % (node.name, tag) if tag else node.name + '.pt'
     filepath = os.path.join(Paths.weight_dir_path(''), filename)
     node.save(filepath)
+
+
+def load_node(node_name, tag):
+    filename = '%s_%s.pt' % (node_name, tag) if tag else node_name + '.pt'
+    filepath = os.path.join(Paths.weight_dir_path(''), filename)
+    gnode = GNode.load(filepath)
+    return gnode
 
 
 def train_phase_1(node, n_iterations):
@@ -413,16 +420,16 @@ leaf_nodes = {0}
 
 future_objects = []  # type: list[ApplyResult]
 
-pool = Pool(processes=16)
-save_node(root, '')
-
-for i_modes in range(8):
-    node_id = find_next_node()
-    print('Next Node to split: %d' % node_id)
-    node = tree.nodes[node_id]
-    train_node(node, x_clf_iters=1000, gan_iters=20000)
-    leaf_nodes.remove(node_id)
-    leaf_nodes.update(node.child_ids)
+# pool = Pool(processes=16)
+# # save_node(root, '')
+#
+# for i_modes in range(8):
+#     node_id = find_next_node()
+#     print('Next Node to split: %d' % node_id)
+#     node = tree.nodes[node_id]
+#     train_node(node, x_clf_iters=1000, gan_iters=20000)
+#     leaf_nodes.remove(node_id)
+#     leaf_nodes.update(node.child_ids)
 
 #
 # root.save('best_root_phase1.pickle')
