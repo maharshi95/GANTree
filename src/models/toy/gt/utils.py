@@ -1,6 +1,7 @@
 import logging
 import torch as tr
 import numpy as np
+from termcolor import colored
 
 from base.model import BaseGan
 from .named_tuples import DistParams
@@ -41,12 +42,7 @@ class GNodeUtils:
         new_node = GNode(node_id, model, parent)
         new_node.dist_params = dist_params
 
-        logger.info('Child Node %s created' % (model.name))
-        logger.info('Node parameters: ')
-        logger.info('prior_means: {}'.format(new_node.prior_means))
-        logger.info('prior_cov  : {}'.format(new_node.prior_cov))
-        logger.info('cond_prob  : {}'.format(new_node.prior_prob))
-        logger.info('abs_prob   : {}'.format(new_node.prob))
+        logger.info(colored('Child Node %s created from %s' % (model.name, parent and parent.name), 'green', attrs=['bold']))
         print('')
 
         return new_node

@@ -39,6 +39,12 @@ class GanTree(BaseModel):
     def root(self):
         return self.nodes[0]
 
+    def __getitem__(self, item):
+        return self.nodes[item]
+
+    def __iter__(self):
+        return iter(self.nodes)
+
     def create_child_node(self, dist_params, model, parent=None):
         # type: (DistParams, BaseGan, GNode | None) -> GNode
         new_node_id = len(self.nodes)
@@ -53,6 +59,7 @@ class GanTree(BaseModel):
         child_nodes = GNodeUtils.split_node(parent, self.n_child, x_batch,
                                             base_id=len(self.nodes), fixed=fixed)
 
+        self.nodes.extend(child_nodes)
         self.split_history.append(parent.id)
         parent.set_optimizer()
 

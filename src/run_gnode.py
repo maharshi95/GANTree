@@ -195,34 +195,27 @@ def full_train_step(gnode, dl, visualize=True, validation=True, save_params=True
         print()
 
 
-def get_data_tuple(data_dict, labels_dict=None):
-    train_splits, train_split_index = root.split_x(data_dict['train'])
-    test_splits, test_split_index = root.split_x(data_dict['test'])
-
-    index = 4 if labels_dict else 2
-
-    data_tuples = {
-        i: (
-               train_splits[i],
-               test_splits[i],
-               labels_dict['train'][train_split_index[i]] if labels_dict else None,
-               labels_dict['test'][test_split_index[i]] if labels_dict else None
-           )[:index] for i in root.child_ids
-    }
-    return data_tuples
-
-
-def relabel_samples(node):
+def split_dataloader(node):
     dl = dl_set[node.id]
-    full_data_tuples = get_data_tuple(dl.data, dl.labels)
+
+    train_splits, train_split_index = node.split_x(dl.data['train'])
+    test_splits, test_split_index = node.split_x(dl.data['test'])
+
+    index = 4 if dl.supervised else 2
 
     for i in node.child_ids:
-        dl_set[i] = CustomDataLoader.create_from_parent(dl, full_data_tuples[i])
+        train_labels = dl.labels['train'][train_split_index[i]] if dl.supervised else None
+        test_labels = dl.labels['test'][test_split_index[i]] if dl.supervised else None
+
+        data_tuples = (
+            train_splits[i],
+            test_splits[i],
+            train_labels,
+            test_labels
+        )
+        dl_set[i] = CustomDataLoader.create_from_parent(dl, data_tuples[:index])
         seed_data[i] = dl_set[i].random_batch('test', 2048)
 
-
-# nodes[1].update_dist_params(means=2 * np.ones(2), cov=np.eye(2), prior_prob=1)
-# nodes[2].update_dist_params(means=- 2 * np.ones(2), cov=np.eye(2), prior_prob=1)
 
 def get_x_clf_plot_data(root, x_batch):
     with tr.no_grad():
@@ -356,12 +349,10 @@ def train_node(node, x_clf_iters=200, gan_iters=10000):
     global future_objects
     child_nodes = tree.split_node(node, fixed=False)
 
-    nodes = {node.id: node for node in child_nodes}  # type: dict[int, GNode]
+    split_dataloader(node)
 
-    relabel_samples(node)
-
-    nodes[1].set_trainer(dl_set[1], H, train_config)
-    nodes[2].set_trainer(dl_set[2], H, train_config)
+    for cnode in child_nodes:
+        cnode.set_trainer(dl_set[cnode.id], H, train_config)
 
     future_objects = []  # type: list[ApplyResult]
 
@@ -370,9 +361,9 @@ def train_node(node, x_clf_iters=200, gan_iters=10000):
     train_phase_1(node, x_clf_iters)
 
     for cid, cnode in node.child_nodes.items():
-        save_node(cnode, 'phase_1')
+        save_node(cnode, 'half')
 
-    relabel_samples(node)
+    split_dataloader(node)
 
     train_phase_2(node, gan_iters)
 
@@ -380,12 +371,21 @@ def train_node(node, x_clf_iters=200, gan_iters=10000):
         save_node(cnode, 'full')
 
     # Logging the image savingh operations status
+    n_total = 0
+    n_failed = 0
+    path = ''
     for i, obj in enumerate(future_objects):
         iter_no, path = obj.get()
-        if obj.successful():
-            print('Saved figure for iter %3d @ %s' % (iter_no, path))
-        else:
-            print('Failed saving figure for iter %d' % iter_no)
+        if not obj.successful():
+            n_failed += 1
+    if n_failed > 0:
+        print('Attempted saving %d images at %s, Failed: %s' % (len(future_objects), os.path.dirname(path), n_failed))
+    else:
+        print('%d images successfully saved at %s' % (len(future_objects) + n_failed, os.path.dirname(path)))
+
+
+def find_next_node():
+    return min(leaf_nodes, key=lambda i: tree.nodes[i].mean_likelihood(dl_set[i].data['test']))
 
 
 gan = ToyGAN.create_from_hyperparams('node0', H, '0')
@@ -409,11 +409,21 @@ seed_data = {
     0: (x_seed, l_seed)
 }
 
+leaf_nodes = {0}
+
 future_objects = []  # type: list[ApplyResult]
 
 pool = Pool(processes=16)
 save_node(root, '')
-train_node(root, x_clf_iters=1000)
+
+for i_modes in range(8):
+    node_id = find_next_node()
+    print('Next Node to split: %d' % node_id)
+    node = tree.nodes[node_id]
+    train_node(node, x_clf_iters=1000, gan_iters=20000)
+    leaf_nodes.remove(node_id)
+    leaf_nodes.update(node.child_ids)
+
 #
 # root.save('best_root_phase1.pickle')
 # root.get_child(0).save('best_child0_phase1.pickle')
