@@ -16,7 +16,7 @@ from exp_context import ExperimentContext
 from utils.tr_utils import as_np
 from utils.viz_utils import get_x_clf_figure
 
-default_args_str = '-hp base/hyperparams.py -d all -en exp14_node_split -t'
+default_args_str = '-hp hyperparams/mnist.py -d all -en exp1_mnist -t'
 
 if Config.use_gpu:
     print('mode: GPU')
@@ -372,7 +372,7 @@ dist_params = DistParams(means=means, cov=cov, pi=1.0, prob=1.0)
 
 dl = DataLoaderFactory.get_dataloader(H.dataloader, H.input_size, H.z_size, H.batch_size, H.batch_size, supervised=True)
 
-x_seed, l_seed = dl.random_batch('test', 2048)
+x_seed, l_seed = dl.random_batch('test', 32)
 
 tree = GanTree('gtree', ImgGAN, H, x_seed)
 root = tree.create_child_node(dist_params, gan)

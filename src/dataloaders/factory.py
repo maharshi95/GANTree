@@ -2,8 +2,8 @@ from broken_segments import BrokenSegmentsDataLoader
 from broken_circle import BrokenCircleDataLoader
 from base.dataloader import BaseDataLoader
 from .multi_normal import TwoGaussiansDataLoader, FourGaussiansDataLoader, FourSymGaussiansDataLoader, NineGaussiansDataLoader
-from celeba import CelebA
-from dataloader_mnist import MNISTDataLoader
+from .celeba import CelebA
+from .mnist import MnistDataLoader
 
 
 class DataLoaderFactory(object):
@@ -14,8 +14,8 @@ class DataLoaderFactory(object):
         'four_gaussian': FourGaussiansDataLoader,
         'four_gaussian_sym': FourSymGaussiansDataLoader,
         'nine_gaussian': NineGaussiansDataLoader,
-        'mnist': MNISTDataLoader,
-        'celeba': CelebA
+        'mnist': MnistDataLoader,
+        'celeba': CelebA,
     }
 
     @classmethod
