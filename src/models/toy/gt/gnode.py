@@ -57,6 +57,10 @@ class GNode(nn.Module):
         return self.gan.name
 
     @property
+    def model_class(self):
+        return self.gan.__class__
+
+    @property
     def is_root(self):
         return self.parent is None
 
@@ -181,16 +185,16 @@ class GNode(nn.Module):
             pickle.dump(pickle_data, fp)
 
     @classmethod
-    def load(cls, file, gnode=None):
+    def load(cls, file, gnode=None, Model=None, strict=False):
         with open(file) as fp:
             pickle_dict = pickle.load(fp)
 
         node_id = pickle_dict['id']
         name = pickle_dict.get('name', '')
         gmm = pickle_dict['gmm']
-        node = gnode or GNode(node_id, ToyGAN(name, 2, ))
+        node = gnode or GNode(node_id, Model(name, 2, ))
         node.gmm = gmm
-        node.load_state_dict(pickle_dict['state_dict'])
+        node.load_state_dict(pickle_dict['state_dict'], strict=strict)
         node.dist_params = pickle_dict['dist_params']
         return node
 
@@ -209,8 +213,8 @@ class GNode(nn.Module):
         # type: () -> GanTrainer
         return self.trainer
 
-    def set_trainer(self, dataloader, hyperparams, train_config, msg=''):
-        self.trainer = GanTrainer(self.gan, dataloader, hyperparams, train_config, tensorboard_msg=msg)
+    def set_trainer(self, dataloader, hyperparams, train_config, msg='', Model=GanTrainer):
+        self.trainer = Model(self.gan, dataloader, hyperparams, train_config, tensorboard_msg=msg)
 
     def set_optimizer(self):
         encoder_params = list(self.post_gmm_encoder.parameters())
