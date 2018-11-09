@@ -36,10 +36,10 @@ class Hyperparams:
     logit_z_batch_size = 1
 
     input_size = 2
-    z_size = 100
+    z_size = 2
 
     # Distribution params
-    z_bounds = 10.0
+    z_bounds = 100.0
     cor = 0.6
 
     # Learning Parameters

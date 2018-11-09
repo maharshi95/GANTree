@@ -43,8 +43,6 @@ class GNodeUtils:
         new_node.dist_params = dist_params
 
         logger.info(colored('Child Node %s created from %s' % (model.name, parent and parent.name), 'green', attrs=['bold']))
-        print('')
-
         return new_node
 
     @staticmethod
@@ -54,7 +52,6 @@ class GNodeUtils:
         logger.info('Starting Split Process: %s' % parent)
         parent.fit_gmm(x_batch, max_iter=1000)
         logger.info('Gaussian Mixture Fitted')
-        print('')
 
         child_nodes = []
 

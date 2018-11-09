@@ -1,4 +1,6 @@
 import logging
+from collections import deque
+
 import numpy as np
 from torch import nn
 
@@ -14,6 +16,28 @@ logger = logging.getLogger(__name__)
 
 class GanTree(BaseModel):
     GanModel = None  # type: BaseGan
+
+    @classmethod
+    def create_from_root(cls, root, name, hyperparams):
+        # type: (GNode, str, object) -> GanTree
+        nodes = {}
+        q = deque([root])
+        n_child = 0
+        while q:
+            node = q.popleft()
+            nodes[node.id] = node
+            n_child = max(n_child, len(node.child_ids))
+            for cid in node.child_ids:
+                q.append(node.child_nodes[cid])
+
+        tree = GanTree(name, root.model_class, hyperparams, n_child=n_child)
+
+        for cid in sorted(nodes.keys()):
+            tree.nodes.append(nodes[cid])
+
+        for i, node in enumerate(tree.nodes):
+            assert node.id == i
+        return tree
 
     def __init__(self, name, GanModel, hyperparams, x_batch=None, n_child=2):
         super(GanTree, self).__init__()
@@ -38,6 +62,18 @@ class GanTree(BaseModel):
     @property
     def root(self):
         return self.nodes[0]
+
+    @property
+    def id_graph(self):
+        def get_graph(node):
+            if node.is_leaf:
+                return None
+            return {
+                cnode.id: get_graph(cnode)
+                for cnode in node.child_nodes
+            }
+
+        return {self.root.id: get_graph(self.root)}
 
     def __getitem__(self, item):
         return self.nodes[item]

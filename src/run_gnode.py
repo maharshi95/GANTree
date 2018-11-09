@@ -1,10 +1,14 @@
 from __future__ import print_function, division
 import os, argparse, logging, json
 
+os.environ['CUDA_VISIBLE_DEVICES'] = "0"
+
+import pickle
 import sys, time
 import numpy as np
 import torch as tr
 import matplotlib
+from termcolor import colored
 
 matplotlib.use('Agg')
 
@@ -16,7 +20,7 @@ from matplotlib import pyplot as plt
 from configs import Config
 from exp_context import ExperimentContext
 
-default_args_str = '-hp base/hyperparams.py -d all -en exp15_nine_gaussians -t'
+default_args_str = '-hp base/hyperparams.py -d all -en exp17_toy_full_split_trial -g 1'
 
 if Config.use_gpu:
     print('mode: GPU')
@@ -72,7 +76,8 @@ if 'all' in args.delete or 'results' in args.delete:
     print('')
 
 ##### Create required directories
-model_utils.setup_dirs()
+logger.info('Created directories')
+model_utils.setup_dirs(log_flag=False)
 
 ##### Model and Training related imports
 from dataloaders.factory import DataLoaderFactory
@@ -103,7 +108,8 @@ if args.tensorboard:
     """.format(address_str, address)
     from IPython.core.display import display, HTML
 
-    display(HTML(html_content))
+    logger.info(colored(tensorboard_msg, 'blue', attrs=['bold']))
+    # display(HTML(html_content))
 
 # Dump Hyperparams file the experiments directory
 hyperparams_string_content = json.dumps(H.__dict__, default=lambda x: repr(x), indent=4, sort_keys=True)
@@ -145,54 +151,54 @@ def full_train_step(gnode, dl, visualize=True, validation=True, save_params=True
     metrics = model.compute_metrics(x_train, z_train)
     g_acc, d_acc = metrics['accuracy_gen_x'], metrics['accuracy_dis_x']
 
-    # Console Log
-    if trainer.is_console_log_step():
-        print('============================================================')
-        print('Train Step', trainer.iter_no + 1)
-        print('%s: step %i:     Disc Acc: %.3f' % (exp_name, trainer.iter_no, metrics['accuracy_dis_x'].item()))
-        print('%s: step %i:     Gen  Acc: %.3f' % (exp_name, trainer.iter_no, metrics['accuracy_gen_x'].item()))
-        print('%s: step %i: x_recon Loss: %.3f' % (exp_name, trainer.iter_no, metrics['loss_x_recon'].item()))
-        print('%s: step %i: z_recon Loss: %.3f' % (exp_name, trainer.iter_no, metrics['loss_z_recon'].item()))
-        print('------------------------------------------------------------')
+    # # Console Log
+    # if trainer.is_console_log_step():
+    #     print('============================================================')
+    #     print('Train Step', trainer.iter_no + 1)
+    #     print('%s: step %i:     Disc Acc: %.3f' % (exp_name, trainer.iter_no, metrics['accuracy_dis_x'].item()))
+    #     print('%s: step %i:     Gen  Acc: %.3f' % (exp_name, trainer.iter_no, metrics['accuracy_gen_x'].item()))
+    #     print('%s: step %i: x_recon Loss: %.3f' % (exp_name, trainer.iter_no, metrics['loss_x_recon'].item()))
+    #     print('%s: step %i: z_recon Loss: %.3f' % (exp_name, trainer.iter_no, metrics['loss_z_recon'].item()))
+    #     print('------------------------------------------------------------')
 
     # Tensorboard Log
     if trainer.is_tboard_log_step():
         for tag, value in metrics.items():
             trainer.writer['train'].add_scalar(tag, value.item(), trainer.iter_no)
 
-    # Validation Computations
-    if validation and trainer.is_validation_step():
-        trainer.validation()
+    # # Validation Computations
+    # if validation and trainer.is_validation_step():
+    #     trainer.validation()
 
-    # Weights Saving
-    if save_params and trainer.is_params_save_step():
-        tic_save = time.time()
-        model.save_params(dir_name='iter', weight_label='iter', iter_no=trainer.iter_no)
-        tac_save = time.time()
-        save_time = tac_save - tic_save
-        if trainer.is_console_log_step():
-            print('Param Save Time: %.4f' % (save_time))
-            print('------------------------------------------------------------')
+    # # Weights Saving
+    # if save_params and trainer.is_params_save_step():
+    #     tic_save = time.time()
+    #     model.save_params(dir_name='iter', weight_label='iter', iter_no=trainer.iter_no)
+    #     tac_save = time.time()
+    #     save_time = tac_save - tic_save
+    #     if trainer.is_console_log_step():
+    #         print('Param Save Time: %.4f' % (save_time))
+    #         print('------------------------------------------------------------')
 
-    # Visualization
-    if visualize and trainer.is_visualization_step():
-        # previous_backend = plt.get_backend()
-        # plt.switch_backend('Agg')
-        trainer.visualize('train')
-        trainer.visualize('test')
-        # plt.switch_backend(previous_backend)
+    # # Visualization
+    # if visualize and trainer.is_visualization_step():
+    #     # previous_backend = plt.get_backend()
+    #     # plt.switch_backend('Agg')
+    #     trainer.visualize('train')
+    #     trainer.visualize('test')
+    #     # plt.switch_backend(previous_backend)
 
     # Switch Training Networks - Gen | Disc
     trainer.switch_train_mode(g_acc, d_acc)
 
-    iter_time_end = time.time()
-    if trainer.is_console_log_step():
-        print('Total Iter Time: %.4f' % (iter_time_end - iter_time_start))
-        if trainer.tensorboard_msg:
-            print('------------------------------------------------------------')
-            print(trainer.tensorboard_msg)
-        print('============================================================')
-        print()
+    # iter_time_end = time.time()
+    # if trainer.is_console_log_step():
+    #     print('Total Iter Time: %.4f' % (iter_time_end - iter_time_start))
+    #     if trainer.tensorboard_msg:
+    #         print('------------------------------------------------------------')
+    #         print(trainer.tensorboard_msg)
+    #     print('============================================================')
+    #     print()
 
 
 def split_dataloader(node):
@@ -214,16 +220,18 @@ def split_dataloader(node):
             test_labels
         )
         dl_set[i] = CustomDataLoader.create_from_parent(dl, data_tuples[:index])
-        seed_data[i] = dl_set[i].random_batch('test', 2048)
+        seed_data[i] = dl_set[i].random_batch('train', 2048)
+    with open('seed_data.pickle', 'w') as fp:
+        pickle.dump(seed_data, fp)
 
 
-def get_x_clf_plot_data(root, x_batch):
+def get_x_clf_plot_data(node, x_batch):
     with tr.no_grad():
-        z_batch_post = root.post_gmm_encode(x_batch)
-        x_recon_post, _ = root.post_gmm_decode(z_batch_post)
+        z_batch_post = node.post_gmm_encode(x_batch)
+        x_recon_post, _ = node.post_gmm_decode(z_batch_post)
 
-        z_batch_pre = root.pre_gmm_encode(x_batch)
-        x_recon_pre = root.pre_gmm_decode(z_batch_pre)
+        z_batch_pre = node.pre_gmm_encode(x_batch)
+        x_recon_pre = node.pre_gmm_decode(z_batch_pre)
 
         z_batch_post = as_np(z_batch_post)
         x_recon_post = as_np(x_recon_post)
@@ -290,10 +298,14 @@ def visualize_plots(iter_no, node, x_batch, labels, tag):
     return future
 
 
-def save_node(node, tag=''):
-    # type: (GNode, str) -> None
-    bash_utils.create_dir(Paths.weight_dir_path(''))
-    filename = '%s_%s.pt' % (node.name, tag) if tag else node.name + '.pt'
+def save_node(node, tag=None, iter=None):
+    # type: (GNode, str, int) -> None
+    filename = node.name
+    if tag is not None:
+        filename += str(tag)
+    if iter is not None:
+        filename += ('%05d' % iter)
+    filename = filename + '.pt'
     filepath = os.path.join(Paths.weight_dir_path(''), filename)
     node.save(filepath)
 
@@ -301,12 +313,14 @@ def save_node(node, tag=''):
 def load_node(node_name, tag):
     filename = '%s_%s.pt' % (node_name, tag) if tag else node_name + '.pt'
     filepath = os.path.join(Paths.weight_dir_path(''), filename)
-    gnode = GNode.load(filepath)
+    gnode = GNode.load(filepath, Model=ToyGAN)
     return gnode
 
 
 def train_phase_1(node, n_iterations):
     x_seed, l_seed = seed_data[node.id]
+
+    logger.info(colored('Training X-CLF (Phase 1) on %s' % node.name, 'yellow', attrs=['bold']))
 
     node.fit_gmm(x_seed)
     visualize_plots(iter_no=0, node=node, x_batch=x_seed, labels=l_seed, tag='x_clf_plots')
@@ -318,7 +332,7 @@ def train_phase_1(node, n_iterations):
             i = iter_no + 1
 
             # Training common encoder over cross-classification loss with a batch across common dataloader
-            x_clf_train_batch, _ = dl_set[0].next_batch('train')
+            x_clf_train_batch, _ = dl_set[node_id].next_batch('train')
             z_batch, x_recon, x_recon_loss, x_clf_loss, loss = node.step_train_x_clf(x_clf_train_batch)
 
             node.trainer.writer['train'].add_scalar('x_clf_loss', x_clf_loss, iter_no)
@@ -326,59 +340,72 @@ def train_phase_1(node, n_iterations):
             node.trainer.writer['train'].add_scalar('loss', loss, iter_no)
 
             node.fit_gmm(x_seed)
-            if i < 10 or i % 10 == 0:
+            if i < 10 or i < 500 and i % 10 == 0 or i % 100 == 0:
                 visualize_plots(iter_no=i, node=node, x_batch=x_seed, labels=l_seed, tag='x_clf_plots')
+                save_node(node, 'half', iter_no)
             pbar.update(n=1)
 
 
 def is_gan_vis_iter(i):
-    return (i < 50
-            or (i < 1000 and i % 20 == 0)
-            or (i < 5000 and i % 100 == 0)
-            or (i % 500 == 0))
+    return ((i <= 1000 and i % 50 == 0)
+            or (1000 < i <= 5000 and i % 100 == 0)
+            or (5000 < i <= 10000 and i % 200 == 0))
 
 
-def train_phase_2(node, n_iterations):
-    # type: (GNode, int) -> None
+def train_phase_2(node, n_iterations, min_iters, x_clf_limit=0.01):
+    # type: (GNode, int, int, float) -> None
+    logger.info(colored('Training I-GAN (Phase 2) on %s' % node.name, 'yellow', attrs=['bold']))
+
     x_seed, l_seed = seed_data[node.id]
     with tqdm(total=n_iterations) as pbar:
         for iter_no in range(n_iterations):
             for i in node.child_ids:
                 full_train_step(node.child_nodes[i], dl_set[i], visualize=False)
                 pbar.update(n=0.5)
-            # root.fit_gmm(x_seed)
+
+            x_clf_train_batch, _ = dl_set[node_id].next_batch('train')
+            z_batch, x_recon, x_recon_loss, x_clf_loss, loss = node.step_train_x_clf(x_clf_train_batch, clip=x_clf_limit)
+            node.trainer.writer['train'].add_scalar('x_clf_loss', x_clf_loss, iter_no)
+
             if is_gan_vis_iter(iter_no):
-                visualize_plots(iter_no, root, x_seed, l_seed, tag='gan_plots')
+                visualize_plots(iter_no, node, x_seed, l_seed, tag='gan_plots')
+                save_node(node, 'full', iter_no)
+
+            if iter_no >= min_iters and x_clf_loss <= x_clf_limit * (1 + 1e-2):
+                break
 
 
-def train_node(node, x_clf_iters=200, gan_iters=10000):
-    # type: (GNode, int, int) -> None
+def train_node(node, x_clf_iters=200, gan_iters=10000, min_gan_iters=5000, x_clf_lim=0.0001):
+    # type: (GNode, int, int, int ,float) -> None
     global future_objects
     child_nodes = tree.split_node(node, fixed=False)
 
+    node.fit_gmm(seed_data[node.id][0], warm_start=False)
     split_dataloader(node)
-
     for cnode in child_nodes:
         cnode.set_trainer(dl_set[cnode.id], H, train_config)
 
     future_objects = []  # type: list[ApplyResult]
 
-    bash_utils.create_dir(Paths.get_result_path('', node.name))
-
+    bash_utils.create_dir(Paths.get_result_path('', node.name), log_flag=False)
     train_phase_1(node, x_clf_iters)
 
+    # Saving Node
+    save_node(node, 'full_fit')
     for cid, cnode in node.child_nodes.items():
         save_node(cnode, 'half')
 
+    # Splitting Dataloader
     split_dataloader(node)
 
-    train_phase_2(node, gan_iters)
+    train_phase_2(node, gan_iters, min_iters=min_gan_iters, x_clf_limit=x_clf_lim)
+
+    split_dataloader(node)
 
     for cid, cnode in node.child_nodes.items():
         save_node(cnode, 'full')
 
     # Logging the image savingh operations status
-    n_total = 0
     n_failed = 0
     path = ''
     for i, obj in enumerate(future_objects):
@@ -392,7 +419,17 @@ def train_node(node, x_clf_iters=200, gan_iters=10000):
 
 
 def find_next_node():
-    return min(leaf_nodes, key=lambda i: tree.nodes[i].mean_likelihood(dl_set[i].data['test']))
+    logger.info(colored('Leaf Nodes: %s' % str(list(leaf_nodes)), 'green', attrs=['bold']))
+    likelihoods = {i: tree.nodes[i].mean_likelihood(dl_set[i].data['train']) for i in  leaf_nodes}
+    n_samples = {i: dl_set[i].data['train'].shape[0] for i in  leaf_nodes}
+    pairs = [(node_id, n_samples[node_id], likelihoods[node_id]) for node_id in leaf_nodes]
+    for pair in pairs:
+        logger.info('Node: %2d N_Samples: %5d Likelihood %.03f' % (pair[0], pair[1], pair[2]))
+    min_samples = min(n_samples)
+    for leaf_id in leaf_nodes:
+        if n_samples[leaf_id] > 3 * min_samples:
+            return max(leaf_nodes, key=lambda i: n_samples[i])
+    return min(leaf_nodes, key=lambda i: likelihoods[i])
 
 
 gan = ToyGAN.create_from_hyperparams('node0', H, '0')
@@ -412,6 +449,7 @@ GNode.load('9g_root.pickle', root)
 # root.save('9g_root.pickle')
 
 dl_set = {0: dl}
+
 seed_data = {
     0: (x_seed, l_seed)
 }
@@ -420,18 +458,18 @@ leaf_nodes = {0}
 
 future_objects = []  # type: list[ApplyResult]
 
-# pool = Pool(processes=16)
-# # save_node(root, '')
-#
-# for i_modes in range(8):
-#     node_id = find_next_node()
-#     print('Next Node to split: %d' % node_id)
-#     node = tree.nodes[node_id]
-#     train_node(node, x_clf_iters=1000, gan_iters=20000)
-#     leaf_nodes.remove(node_id)
-#     leaf_nodes.update(node.child_ids)
+pool = Pool(processes=16)
 
-#
+bash_utils.create_dir(Paths.weight_dir_path(''), log_flag=False)
+for i_modes in range(8):
+    node_id = find_next_node()
+    logger.info(colored('Next Node to split: %d' % node_id, 'green', attrs=['bold']))
+    node = tree.nodes[node_id]
+    train_node(node, x_clf_iters=1000, gan_iters=10000, min_gan_iters=5000, x_clf_lim=0.00001)
+    leaf_nodes.remove(node_id)
+    leaf_nodes.update(node.child_ids)
+    print('')
+
 # root.save('best_root_phase1.pickle')
 # root.get_child(0).save('best_child0_phase1.pickle')
 # root.get_child(1).save('best_child1_phase1.pickle')

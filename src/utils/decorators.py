@@ -1,4 +1,5 @@
 import torch as tr
+import numpy as np
 import inspect
 
 from configs import Config
@@ -10,6 +11,13 @@ def get_numpy(val):
     if isinstance(val, tr.Tensor):
         return val.cpu().detach().numpy() if tr.cuda.is_available() else val.detach().numpy()
     return val
+
+
+def numpy_same_type(x):
+    if isinstance(x.dtype, np.floating):
+        return x.astype(np.float32)
+    else:
+        return x
 
 
 def make_tensor(use_gpu=Config.use_gpu):
