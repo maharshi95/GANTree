@@ -39,13 +39,13 @@ class Hyperparams:
     z_size = 2
 
     # Distribution params
-    z_bounds = 100.0
+    z_bounds = 10.0
     cor = 0.6
 
     # Learning Parameters
-    lr_autoencoder = 0.0003
-    lr_decoder = 0.0003
-    lr_disc = 0.0003
+    lr_autoencoder = 0.0001
+    lr_decoder = 0.0001
+    lr_disc = 0.0001
 
     z_dist_type = 'normal'  # ['uniform', 'normal', 'sphere']
 

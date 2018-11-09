@@ -20,7 +20,7 @@ from matplotlib import pyplot as plt
 from configs import Config
 from exp_context import ExperimentContext
 
-default_args_str = '-hp base/hyperparams.py -d all -en exp17_toy_full_split_trial -g 1'
+default_args_str = '-hp base/hyperparams.py -d all -en exp18_toy_full_split_with_cutoff_thresholds -g 1'
 
 if Config.use_gpu:
     print('mode: GPU')
@@ -323,7 +323,7 @@ def train_phase_1(node, n_iterations):
     logger.info(colored('Training X-CLF (Phase 1) on %s' % node.name, 'yellow', attrs=['bold']))
 
     node.fit_gmm(x_seed)
-    visualize_plots(iter_no=0, node=node, x_batch=x_seed, labels=l_seed, tag='x_clf_plots')
+    visualize_plots(iter_no=0, node=node, x_batch=x_seed, labels=l_seed, tag='phase1_plot')
 
     with tqdm(total=n_iterations) as pbar:
         for iter_no in range(n_iterations):
@@ -341,7 +341,7 @@ def train_phase_1(node, n_iterations):
 
             node.fit_gmm(x_seed)
             if i < 10 or i < 500 and i % 10 == 0 or i % 100 == 0:
-                visualize_plots(iter_no=i, node=node, x_batch=x_seed, labels=l_seed, tag='x_clf_plots')
+                visualize_plots(iter_no=i, node=node, x_batch=x_seed, labels=l_seed, tag='phase1_plot')
                 save_node(node, 'half', iter_no)
             pbar.update(n=1)
 
@@ -352,8 +352,8 @@ def is_gan_vis_iter(i):
             or (5000 < i <= 10000 and i % 200 == 0))
 
 
-def train_phase_2(node, n_iterations, min_iters, x_clf_limit=0.01):
-    # type: (GNode, int, int, float) -> None
+def train_phase_2(node, n_iterations, min_iters, x_clf_limit, x_recon_limit):
+    # type: (GNode, int, int, float, float) -> None
     logger.info(colored('Training I-GAN (Phase 2) on %s' % node.name, 'yellow', attrs=['bold']))
 
     x_seed, l_seed = seed_data[node.id]
@@ -368,15 +368,15 @@ def train_phase_2(node, n_iterations, min_iters, x_clf_limit=0.01):
             node.trainer.writer['train'].add_scalar('x_clf_loss', x_clf_loss, iter_no)
 
             if is_gan_vis_iter(iter_no):
-                visualize_plots(iter_no, node, x_seed, l_seed, tag='gan_plots')
+                visualize_plots(iter_no, node, x_seed, l_seed, tag='phase2_plot')
                 save_node(node, 'full', iter_no)
 
-            if iter_no >= min_iters and x_clf_loss <= x_clf_limit * (1 + 1e-2):
+            if iter_no >= min_iters and x_clf_loss <= x_clf_limit * (1.0001) and x_recon_loss <= x_recon_limit * (1.0001):
                 break
 
 
-def train_node(node, x_clf_iters=200, gan_iters=10000, min_gan_iters=5000, x_clf_lim=0.0001):
-    # type: (GNode, int, int, int ,float) -> None
+def train_node(node, x_clf_iters, gan_iters, min_gan_iters, x_clf_lim, x_recon_limit):
+    # type: (GNode, int, int, int ,float, float) -> None
     global future_objects
     child_nodes = tree.split_node(node, fixed=False)
 
@@ -398,7 +398,7 @@ def train_node(node, x_clf_iters=200, gan_iters=10000, min_gan_iters=5000, x_clf
     # Splitting Dataloader
     split_dataloader(node)
 
-    train_phase_2(node, gan_iters, min_iters=min_gan_iters, x_clf_limit=x_clf_lim)
+    train_phase_2(node, gan_iters, min_iters=min_gan_iters, x_clf_limit=x_clf_lim, x_recon_limit=x_recon_limit)
 
     split_dataloader(node)
 
@@ -465,7 +465,7 @@ for i_modes in range(8):
     node_id = find_next_node()
     logger.info(colored('Next Node to split: %d' % node_id, 'green', attrs=['bold']))
     node = tree.nodes[node_id]
-    train_node(node, x_clf_iters=1000, gan_iters=10000, min_gan_iters=5000, x_clf_lim=0.00001)
+    train_node(node, x_clf_iters=1000, gan_iters=20000, min_gan_iters=5000, x_clf_lim=0.00001, x_recon_limit=0.004)
     leaf_nodes.remove(node_id)
     leaf_nodes.update(node.child_ids)
     print('')

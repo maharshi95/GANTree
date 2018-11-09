@@ -176,7 +176,7 @@ class ToyGAN(BaseGan):
         return z_recon_loss
 
     def cyclic_loss(self, x, z):
-        c_loss = self.x_recon_loss(x) + self.z_recon_loss(z)
+        c_loss = 10 * self.x_recon_loss(x) + self.z_recon_loss(z)
         return c_loss
 
     #### Train Methods
@@ -204,7 +204,7 @@ class ToyGAN(BaseGan):
 
     def step_train_gen_z(self, x):
         self.opt['encoder'].zero_grad()
-        loss_x = self.gen_adv_loss_z(x)
+        loss_x = 0.1 * self.gen_adv_loss_z(x)
         loss_x.backward()
         self.opt['encoder'].step()
         return loss_x
