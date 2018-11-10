@@ -16,13 +16,12 @@ from exp_context import ExperimentContext
 from utils.tr_utils import as_np
 from utils.viz_utils import get_x_clf_figure
 
-default_args_str = '-hp hyperparams/mnist.py -d all -en z100_deepernet_5 -t'
+default_args_str = '-hp hyperparams/mnist.py -d all -en 3_complete_without_BL -t'
 
 if Config.use_gpu:
     print('mode: GPU')
     tr.set_default_tensor_type('torch.cuda.FloatTensor')
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 # Argument Parsing
 parser = argparse.ArgumentParser()
 
@@ -110,8 +109,9 @@ hyperparams_string_content = json.dumps(H.__dict__, default=lambda x: repr(x), i
 with open(Paths.exp_hyperparams_file, "w") as fp:
     fp.write(hyperparams_string_content)
 
+print(H.__dict__)
 train_config = TrainConfig(
-    n_step_tboard_log=5,
+    n_step_tboard_log=50,
     n_step_console_log=-1,
     n_step_validation=100,
     n_step_save_params=2000,
@@ -381,7 +381,7 @@ root.set_trainer(dl, H, train_config, Model=GanImgTrainer)
 
 # GNode.load('best_node.pickle', root)
 for i in range(20):
-    root.train(100000)
+    root.train(5000)
     root.save('../experiments/'+exp_name +'/best_node-'+str(i)+'.pt')
 
 # dl_set = {0: dl}

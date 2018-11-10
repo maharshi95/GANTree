@@ -187,7 +187,7 @@ class ImgGAN(BaseGan):
         return z_recon_loss
 
     def cyclic_loss(self, x, z):
-        c_loss = self.x_recon_loss(x) #+ self.z_recon_loss(z)
+        c_loss = self.x_recon_loss(x) + 0.01* self.z_recon_loss(z)
         return c_loss
 
     #### Train Methods

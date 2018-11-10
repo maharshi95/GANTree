@@ -49,9 +49,10 @@ class ImgEncoder(BaseModel):
         self.conv4 = ConvBlock(128, 256, kernel_size=5, stride=2)
         self.layer1 = nn.Linear(256 * (2 ** 2), 200)
         self.layer2 = nn.Linear(200, H.z_size)
+        self.activation = nn.LeakyReLU(0.2, inplace=True)
         self.init_params()
 
-    #     use only when h==w for an image
+    #     use only when h==w    for an image
     def padding(self, stride, in_dim, out_dim, kernel_dim, mode='SAME', ):
         s = stride
         k = kernel_dim
@@ -84,6 +85,7 @@ class ImgEncoder(BaseModel):
         out = out.view(out.size(0), -1)
 
         dense1 = self.layer1(out)
+        dense1 = self.activation(dense1)
         dense2 = self.layer2(dense1)
         # print(dense2.shape)
 
@@ -107,6 +109,7 @@ class ImgDecoder(BaseModel):
         self.out_scale = Parameter(tr.tensor(out_scale), requires_grad=False)
 
         self.linear1 = nn.Linear(H.z_size, 200)
+        self.activation = nn.LeakyReLU(0.2, inplace=True)
         self.linear2 = nn.Linear(200, 4 * 4 * 32)
 
         self.tconv1 = UpConvBlock(in_channels=32, out_channels=16, kernel_size=5, stride=2, output_padding=(1, 1))
@@ -122,6 +125,7 @@ class ImgDecoder(BaseModel):
     def forward(self, z):
         # print(z.shape)
         fc1 = self.linear1(z)
+        fc1 = self.activation(fc1)
         # print(fc1.shape)
 
         fc2 = self.linear2(fc1)
@@ -159,6 +163,7 @@ class ImgDiscx(BaseModel):
         self.conv3 = ConvBlock(64, 128, kernel_size=5, stride=2)
         self.conv4 = ConvBlock(128, 256, kernel_size=5, stride=2)
         self.layer = nn.Linear(256 * (2 ** 2), 100)
+        self.activation = nn.LeakyReLU(0.2, inplace=True)
 
         self.sample_logit_block = NLinear(100, [32, 32, 1])
 
@@ -190,7 +195,7 @@ class ImgDiscx(BaseModel):
         # print (out.shape)
 
         z_out = self.layer(out)
-
+        z_out = self.activation(z_out)
         # print('z_out_shape', z_out.shape)
 
         sample_logits = self.sample_logit_block(z_out)

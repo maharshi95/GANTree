@@ -58,7 +58,7 @@ class BaseDataLoader(object):
     def next_batch(self, split):
         start = self.batch_index[split] * self.batch_size[split]
         end = start + self.batch_size[split]
-        self.batch_index[split] = (self.batch_size[split] + 1) % self.n_batches[split]
+        self.batch_index[split] = (self.batch_index[split] + 1) % self.n_batches[split]
 
         if self.batch_index[split] == 0:
             self.shuffle(split)

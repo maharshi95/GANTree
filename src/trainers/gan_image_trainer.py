@@ -150,16 +150,19 @@ def make_grid(tensor, nrow=8, padding=2,
 
 def save_image(tensor, filename=None, nrow=8, padding=2,
                normalize=False, scale_each=False):
-
-    tensor = tensor[:, 0, :, :,None]
+    tensor = tensor[:, 0, :, :, None]
     ndarr = make_grid(tensor, nrow=nrow, padding=padding,
                       normalize=normalize, scale_each=scale_each)
     # img = Image.fromarray(ndarr)
 
     h, w, c = ndarr.shape
     ndarr = ndarr.transpose([2, 0, 1])
-    return ndarr[None,:,:,:]
+    return ndarr[None, :, :, :]
     # img.save(filename)
+
+
+def log_images(real, recon, gen):
+    return real, recon, gen
 
 
 class GanImgTrainer(BaseTrainer):
@@ -288,7 +291,7 @@ class GanImgTrainer(BaseTrainer):
 
         x_test, _ = dl.next_batch('test')
         z_test = model.sample((x_test.shape[0],))
-        metrics = model.compute_metrics(x_test, z_test,True)
+        metrics = model.compute_metrics(x_test, z_test, True)
         g_acc, d_acc = metrics['accuracy_gen_x'], metrics['accuracy_dis_x']
 
         # Tensorboard Log
@@ -307,22 +310,20 @@ class GanImgTrainer(BaseTrainer):
 
     def visualize(self, split):
         self.model.eval()
-        tic_viz = time.time()
-        tic_data_prep = time.time()
+
         recon, gen, real = self.save_img(self.seed_data[split])
-        # print(split, 'recon', recon.shape, recon.min(), recon.max())
-        # print(split, 'gen', gen.shape, gen.min(), gen.max())
-        # print(split, 'real', real.shape, real.min(), real.max())
-        tac_data_prep = time.time()
-        time_data_prep = tac_data_prep - tic_data_prep
 
         writer = self.writer[split]
         image_tag = '%s-plot' % self.model.name
         iter_no = self.iter_no
 
-        writer.add_image(image_tag + '-recon', recon, iter_no)
-        writer.add_image(image_tag + '-gen', gen, iter_no)
-        writer.add_image(image_tag + '-real', real, iter_no)
+        def callback(item):
+            real, recon, gen, image_tag, iter_no = item
+            writer.add_image(image_tag + '-recon', recon, iter_no)
+            writer.add_image(image_tag + '-gen', gen, iter_no)
+            writer.add_image(image_tag + '-real', real, iter_no)
+
+        self.pool.apply_async(log_images, (real, recon, gen, image_tag, iter_no), callback=callback)
 
         self.model.train()
 
@@ -331,8 +332,6 @@ class GanImgTrainer(BaseTrainer):
             # model.step_train_encoder(x_train, z_train)
             # model.step_train_decoder(z_train)
             self.model.step_train_autoencoder(x_train, z_train)
-
-
 
     def train_step_ad(self, x_train, z_train):
         model = self.model
@@ -409,7 +408,7 @@ class GanImgTrainer(BaseTrainer):
         if self.is_tboard_log_step():
             for tag, value in metrics.items():
                 self.writer['train'].add_scalar(tag, value.item(), self.iter_no)
-            self.writer['train'].add_scalar('switch_train_mode',int(self.train_generator),self.iter_no)
+            self.writer['train'].add_scalar('switch_train_mode', int(self.train_generator), self.iter_no)
 
         #
         # Validation Computations
