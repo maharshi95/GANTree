@@ -1,15 +1,12 @@
-import torch as tr
+from base import hyperparams
 
 
-class Hyperparams:
-    """
-    Base Hyperparams class.
-    It uses base version of bcgan with 1D x space and z space
-    """
+class Hyperparams(hyperparams.Hyperparams):  # change
+
     dtype = float
 
     # Trainer parameters:
-    n_iterations = 10000
+    n_iterations = 100000
 
     show_visual_while_training = True
     train_generator_adv = True
@@ -22,7 +19,7 @@ class Hyperparams:
 
     circular_bounds = False
 
-    gen_iter_count = 40
+    gen_iter_count = 20
     disc_iter_count = 40
     step_ratio = gen_iter_count, disc_iter_count
 
@@ -30,27 +27,27 @@ class Hyperparams:
 
     # Dimension Parameters
     batch_size = 64
-    seed_batch_size = 32
+    seed_batch_size = 64
 
     logit_x_batch_size = 16
     logit_z_batch_size = 16
 
-    input_size = 2
-    z_size = 2
+    # input_size = 2
+    z_size = 100
 
     # Distribution params
-    z_bounds = 10.0
+    z_bounds = 10.
     cor = 0.6
 
     # Learning Parameters
-    lr_autoencoder = 0.0001
-    lr_decoder = 0.0001
-    lr_disc = 0.0001
+    lr_autoencoder = 0.0003
+    lr_decoder = 0.0003
+    lr_disc = 0.0003
 
     z_dist_type = 'normal'  # ['uniform', 'normal', 'sphere']
 
-    model = 'bcgan'
-    exp_name = 'trial_with_gmms'
+    # model = 'bcgan'
+    exp_name = 'mnist_exp_1'
 
     # dataloader = 'four_gaussian_sym'
     dataloader = 'mnist'
@@ -62,18 +59,3 @@ class Hyperparams:
     input_channel = 1
     input_height = 28
     input_width = 28
-
-    @classmethod
-    def z_means(cls):
-        return tr.zeros(cls.z_size)
-
-    @classmethod
-    def z_cov(cls, sign='0'):
-        cov = tr.eye(cls.z_size)
-        cor = {
-            '+': cls.cor,
-            '-': -cls.cor,
-            '0': 0.0
-        }[sign]
-        cov[0, 1] = cov[1, 0] = cor
-        return cov

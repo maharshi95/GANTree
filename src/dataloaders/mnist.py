@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import torch as tr
 
 from base.dataloader import BaseDataLoader
@@ -5,12 +6,13 @@ from torchvision.datasets import MNIST, FashionMNIST
 
 
 def normalize_mnist_images(x):
+    x = x[:, None, :, :]
     return 2 * (x.type(tr.float32) / 255.0) - 1.0
 
 
 class MnistDataLoader(BaseDataLoader):
 
-    def __init__(self, train_batch_size=32, test_batch_size=32, get_tensor=True):
+    def __init__(self, train_batch_size=32, test_batch_size=32, get_tensor=True, supervised=True):
         super(MnistDataLoader, self).__init__((32, 32), None, train_batch_size, test_batch_size, get_tensor,
                                               supervised=True)
 

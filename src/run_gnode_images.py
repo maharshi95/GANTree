@@ -16,16 +16,17 @@ from exp_context import ExperimentContext
 from utils.tr_utils import as_np
 from utils.viz_utils import get_x_clf_figure
 
-default_args_str = '-hp base/hyperparams.py -d all -en exp14_node_split -t'
+default_args_str = '-hp hyperparams/mnist.py -d all -en z100_deepernet_5 -t'
 
 if Config.use_gpu:
     print('mode: GPU')
     tr.set_default_tensor_type('torch.cuda.FloatTensor')
 
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 # Argument Parsing
 parser = argparse.ArgumentParser()
 
-parser.add_argument('-g', '--gpu', default=0, help='index of the gpu to be used. default: 0')
+parser.add_argument('-g', '--gpu', default=1, help='index of the gpu to be used. default: 0')
 parser.add_argument('-t', '--tensorboard', default=False, const=True, nargs='?', help='Start Tensorboard with the experiment')
 parser.add_argument('-r', '--resume', nargs='?', const=True, default=False,
                     help='if present, the training resumes from the latest step, '
@@ -76,9 +77,8 @@ model_utils.setup_dirs()
 ##### Model and Training related imports
 from dataloaders.factory import DataLoaderFactory
 from base.hyperparams import Hyperparams
-
+from trainers.gan_image_trainer import GanImgTrainer
 from models.images.gan import ImgGAN
-# TODO check
 from models.toy.gt.gantree import GanTree
 from models.toy.gt.gnode import GNode
 from models.toy.gt.utils import DistParams
@@ -370,27 +370,28 @@ means = as_np(gan.z_op_params.means)
 cov = as_np(gan.z_op_params.cov)
 dist_params = DistParams(means=means, cov=cov, pi=1.0, prob=1.0)
 
-dl = DataLoaderFactory.get_dataloader(H.dataloader, H.input_size, H.z_size, H.batch_size, H.batch_size, supervised=True)
+dl = DataLoaderFactory.get_dataloader(H.dataloader, H.batch_size, H.batch_size, )
 
-x_seed, l_seed = dl.random_batch('test', 2048)
+x_seed, l_seed = dl.random_batch('test', 32)
 
 tree = GanTree('gtree', ImgGAN, H, x_seed)
 root = tree.create_child_node(dist_params, gan)
 
-root.set_trainer(dl, H, train_config)
+root.set_trainer(dl, H, train_config, Model=GanImgTrainer)
 
-GNode.load('best_node.pickle', root)
-# root.train(10000)
-# root.save('best_node.pickle')
+# GNode.load('best_node.pickle', root)
+for i in range(20):
+    root.train(100000)
+    root.save('../experiments/'+exp_name +'/best_node-'+str(i)+'.pt')
 
-dl_set = {0: dl}
-
-future_objects = []  # type: list[ApplyResult]
-
-pool = Pool(processes=16)
-
-root.save('best_root_phase1.pickle')
-root.get_child(0).save('best_child0_phase1.pickle')
-root.get_child(1).save('best_child1_phase1.pickle')
-# print('Iter: %d' % (iter_no + 1))
-print('Training Complete.')
+# dl_set = {0: dl}
+#
+# future_objects = []  # type: list[ApplyResult]
+#
+# pool = Pool(processes=16)
+#
+# root.save('best_root_phase1.pickle')
+# root.get_child(0).save('best_child0_phase1.pickle')
+# root.get_child(1).save('best_child1_phase1.pickle')
+# # print('Iter: %d' % (iter_no + 1))
+# print('Training Complete.')

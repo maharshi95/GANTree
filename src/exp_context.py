@@ -18,10 +18,10 @@ class ExperimentContext:
         if inspect.isclass(hyperparams):
             cls.Hyperparams = hyperparams
             cls.hyperparams_name = 'dynamic'
-            print 'loaded HP from class'
+            print( 'loaded HP from class')
 
         elif inspect.ismodule(hyperparams):
-            print 'loading HP from module'
+            print( 'loading HP from module')
             try:
                 cls.hyperparams_name = hyperparams.__name__
                 cls.Hyperparams = hyperparams.Hyperparams
@@ -29,7 +29,7 @@ class ExperimentContext:
                 print('module has no attribute Hyperparams: %s' % hyperparams.__name__)
                 raise ex
         else:
-            print 'loading HP from file'
+            print ('loading HP from file')
             if hyperparams.endswith('.py'):
                 hyperparams = '.'.join(hyperparams.split('/'))[:-3]
             cls.hyperparams_name = hyperparams

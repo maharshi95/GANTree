@@ -76,7 +76,7 @@ def tensor_output(use_gpu=True):
             if isinstance(ret, tuple):
                 ret = map(lambda v: v.cuda() if use_gpu else v, map(tr.tensor, ret))
             else:
-                ret = tr.Tensor(ret)
+                ret = tr.tensor(ret)
                 if use_gpu:
                     ret = ret.cuda()
             return ret

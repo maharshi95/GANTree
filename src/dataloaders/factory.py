@@ -2,7 +2,8 @@ from broken_segments import BrokenSegmentsDataLoader
 from broken_circle import BrokenCircleDataLoader
 from base.dataloader import BaseDataLoader
 from .multi_normal import TwoGaussiansDataLoader, FourGaussiansDataLoader, FourSymGaussiansDataLoader, NineGaussiansDataLoader
-from .dataloader_mnist import MNISTDataLoader
+from .celeba import CelebA
+from .mnist import MnistDataLoader,FashionMnistDataLoader
 
 
 class DataLoaderFactory(object):
@@ -13,13 +14,13 @@ class DataLoaderFactory(object):
         'four_gaussian': FourGaussiansDataLoader,
         'four_gaussian_sym': FourSymGaussiansDataLoader,
         'nine_gaussian': NineGaussiansDataLoader,
-        'mnist': MNISTDataLoader
+        'mnist': MnistDataLoader,
+        'celeba': CelebA,
+        'fashion_mnist':FashionMnistDataLoader,
     }
 
     @classmethod
     def get_dataloader(cls, name, input_size=1, latent_size=1, *args, **kwargs):
         # type: (str, int, int, *tuple, **dict) -> BaseDataLoader
         DL = cls.__dict[name]
-        if name == 'mnist':
-            return DL()
         return DL(input_size, latent_size, *args, **kwargs)
