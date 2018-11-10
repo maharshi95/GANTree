@@ -2,7 +2,10 @@ from collections import namedtuple
 
 import torch as tr
 from torch import nn
+from torch.nn import Parameter
+
 from configs import Config
+from utils import tr_utils
 from utils.tr_utils import ellipse_params, rotate
 
 
@@ -23,12 +26,13 @@ ZParams = namedtuple('ZParams', 'means cov')
 
 
 class SingleZTransform(nn.Module):
-    def __init__(self, params):
+    def __init__(self, params, requires_grad=False, mean_grad=False, cov_grad=False):
         super(SingleZTransform, self).__init__()
 
-        self.means, self.cov = params
-        self.th, self.a, self.b = ellipse_params(self.cov)
-        self.scale = tr.tensor([self.a, self.b], dtype=tr.float32)
+        means = tr.tensor(params[0], dtype=tr.float32)
+        cov = tr.tensor(params[1], dtype=tr.float32)
+        self.means = Parameter(means, requires_grad=requires_grad or mean_grad)
+        self.cov = Parameter(cov, requires_grad=requires_grad or cov_grad)
 
     @property
     def params(self):
@@ -40,20 +44,18 @@ class SingleZTransform(nn.Module):
         self.means, self.cov = tr.Tensor(means), tr.Tensor(cov)
 
     @property
+    def ellipse_params(self):
+        return ellipse_params(self.cov)
+
+    @property
     def inv_params(self):
         return ZParams(-self.means, self.cov)
 
     def normalize(self, x):
-        x = x - self.means
-        x = rotate(x, - self.th)
-        x = x / self.scale
-        return x
+        return tr_utils.dist_normalize(x, self.means, self.cov)
 
     def denormalize(self, x):
-        x = x * self.scale
-        x = rotate(x, self.th)
-        x = x + self.means
-        return x
+        return tr_utils.dist_transform(x, self.means, self.cov)
 
 
 class ZTransform(nn.Module):

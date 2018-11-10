@@ -52,6 +52,25 @@ def x_clf_loss(mu1, sig1, w1, mu2, sig2, w2, z):
     return loss
 
 
+def x_clf_loss_2(mu1, sig1, w1, mu2, sig2, w2, z1, z2):
+    f1 = dist.MultivariateNormal(mu1, sig1)
+    f2 = dist.MultivariateNormal(mu2, sig2)
+
+    p_z1_m1 = f1.log_prob(z1) + tr.log(w1)
+    p_z1_m2 = f2.log_prob(z1) + tr.log(w2)
+
+    p_z2_m1 = f1.log_prob(z2) + tr.log(w1)
+    p_z2_m2 = f2.log_prob(z2) + tr.log(w2)
+
+    p_z1 = log_prob_sum(p_z1_m1, p_z1_m2)
+    p_z2 = log_prob_sum(p_z2_m1, p_z2_m2)
+
+    loss = - (p_z1_m1 - p_z1) - (p_z2_m2 - p_z2)
+
+    loss = loss.mean()
+    return loss
+
+
 def sigmoid_cross_entropy_loss(logits, labels):
     if labels == 0.:
         labels = tr.zeros_like(logits)

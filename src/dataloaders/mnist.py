@@ -5,6 +5,7 @@ from torchvision.datasets import MNIST, FashionMNIST
 
 
 def normalize_mnist_images(x):
+    x = x[:, None, :, :]
     return 2 * (x.type(tr.float32) / 255.0) - 1.0
 
 

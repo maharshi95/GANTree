@@ -28,13 +28,30 @@ def as_np(v, dtype=None):
 
 def mu_cov(M):
     mu = tr.mean(M, dim=0, keepdim=True)
-    cov = tr.mm((M - mu).t(), (M - mu)) / (len(M) - 1)
+    n = max(1, M.shape[0] - 1)
+    cov = tr.mm((M - mu).t(), (M - mu)) / n
     return mu, cov
 
 
-def ellipse_params(cov):
-    cov = tr.Tensor(cov)
+def dist_transform(x, mu, sigma):
+    u, s, vt = tr.svd(sigma)
+    x = x * tr.sqrt(s)
+    x = tr.mm(x, u)
+    x = x + mu
+    return x
 
+
+def dist_normalize(x, mu, sigma):
+    u, s, vt = tr.svd(sigma)
+    v = vt.t()
+
+    x = x - mu
+    x = tr.mm(x, v)
+    x = x / tr.sqrt(s)
+    return x
+
+
+def ellipse_params(cov):
     trace = tr.trace(cov)
     det = tr.det(cov)
     a = tr.sqrt((trace + tr.sqrt(trace ** 2 - 4 * det)) / 2.0)
