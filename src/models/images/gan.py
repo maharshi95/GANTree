@@ -17,6 +17,7 @@ H = ExperimentContext.Hyperparams  # type: Hyperparams
 
 
 class ImgGAN(BaseGan):
+
     def __init__(self, name, z_op_params, z_ip_params=None,
                  encoder=None, decoder=None, disc_x=None, disc_z=None, z_bounds=H.z_bounds):
         super(ImgGAN, self).__init__(name)
@@ -32,8 +33,8 @@ class ImgGAN(BaseGan):
 
         self.encoder = encoder or ImgEncoder(out_scale=z_bounds)
         self.decoder = decoder or ImgDecoder(out_scale=z_bounds)
-        self.disc_x = disc_x or ImgDiscx( n_batch_logits=H.logit_x_batch_size)
-        self.disc_z = disc_z or ImgDiscz( n_batch_logits=H.logit_z_batch_size)
+        self.disc_x = disc_x or ImgDiscx(n_batch_logits=H.logit_x_batch_size)
+        self.disc_z = disc_z or ImgDiscz(n_batch_logits=H.logit_z_batch_size)
 
         if Config.use_gpu:
             self.cuda()
@@ -168,13 +169,16 @@ class ImgGAN(BaseGan):
     def x_recon_loss(self, x):
         # x_recon = self.decoder(self.transform(self.encoder(x)))
         x_recon = self.decoder(self.encoder(x))
-        x_recon_loss = tr.mean((x - x_recon) ** 2)
+        error_vectors = ((x - x_recon) ** 2).view(x.shape[0], -1)
+        x_recon_loss = tr.mean(tr.sum(error_vectors, dim=-1))
         return x_recon_loss
 
     def z_recon_loss(self, z):
         # z_recon = self.transform(self.encoder(self.decoder(z)))
         z_recon = self.encoder(self.decoder(z))
-        z_recon_loss = tr.mean((z - z_recon) ** 2)
+        error_vectors = ((z - z_recon) ** 2).view(z.shape[0], -1)
+
+        z_recon_loss = tr.mean(tr.sum(error_vectors, dim=-1))
         return z_recon_loss
 
     def cyclic_loss(self, x, z):
@@ -213,12 +217,14 @@ class ImgGAN(BaseGan):
 
     def step_train_discriminator(self, x, z):
         loss_x = self.step_train_disc_x(x, z)
-        loss_z = self.step_train_disc_z(x, z)
+        # loss_z = self.step_train_disc_z(x, z)
+        loss_z = loss_x
         return loss_x, loss_z
 
     def step_train_generator(self, x, z):
         loss_x = self.step_train_gen_x(z)
-        loss_z = self.step_train_gen_z(x)
+        # loss_z = self.step_train_gen_z(x)
+        loss_z = loss_x
         return loss_x, loss_z
 
     def step_train_autoencoder(self, x, z):
@@ -226,6 +232,7 @@ class ImgGAN(BaseGan):
         self.opt['decoder_c'].zero_grad()
 
         loss = self.cyclic_loss(x, z)
+        # loss = self.x_recon_loss(x)
         loss.backward()
 
         self.opt['encoder_c'].step()
@@ -283,7 +290,7 @@ class ImgGAN(BaseGan):
             g_z_acc, d_z_acc = self.get_disc_z_accuracies(x, z)
 
             g_adv_loss_x, d_adv_loss_x = self.gen_adv_loss_x(z), self.disc_adv_loss_x(x, z)
-            g_adv_loss_z, d_adv_loss_z = self.gen_adv_loss_z(z), self.disc_adv_loss_z(x, z)
+            g_adv_loss_z, d_adv_loss_z = self.gen_adv_loss_z(x), self.disc_adv_loss_z(x, z)
 
             return {
                 'loss_x_recon': x_recon_loss,

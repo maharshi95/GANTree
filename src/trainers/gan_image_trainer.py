@@ -9,7 +9,7 @@ from tqdm import tqdm
 from multiprocessing import Pool
 from matplotlib import pyplot as plt
 from tensorboardX import SummaryWriter
-
+import os
 from configs import TrainConfig
 from models.toy.gan import ToyGAN
 from utils.decorators import numpy_output
@@ -23,20 +23,26 @@ from base.trainer import BaseTrainer
 from base.dataloader import BaseDataLoader
 
 from exp_context import ExperimentContext
+import math
+from PIL import Image
 
 exp_name = ExperimentContext.exp_name
 
 
-def pca(z):
-    #  z.shape[0]:batchsize
-    #  z.shape[1]:z_size
-    z = as_np(z)
-    data_scaled = prep.scale(z)
-    w, v = LA.eig(np.cov(data_scaled, rowvar=False))
-    pca_main_axes = v[:, :2]
-    projected_data = np.dot(data_scaled, pca_main_axes)
-
-    return projected_data
+#
+# def (z):
+#
+#     #  z.shape[0]:batchsize
+#     #  z.shape[1]:z_size
+#     z = as_np(z)
+#     data_scaled = prep.scale(z)
+#
+#     w, v = LA.eig(np.cov(data_scaled, rowvar=False))
+#     _main_axes = v[:, :2]
+#     projected_data = np.dot(data_scaled, _main_axes)
+#
+#     return projected_data
+#
 
 
 def get_x_plots_data(model, x_input):
@@ -58,11 +64,8 @@ def get_x_plots_data(model, x_input):
     zt_recon_false = model.encode(x_recon_false, transform=True)
 
     return [
-
-        (pca(z_real_true), pca(z_real_false)),
-        (pca(zt_real_true), pca(zt_real_false)),
-        (pca(z_recon_true), pca(z_recon_false)),
-        (pca(zt_recon_true), pca(zt_recon_false)),
+        (zt_real_true, zt_real_false),
+        (zt_recon_true, zt_recon_false),
     ]
 
 
@@ -70,11 +73,10 @@ def get_x_plots_data(model, x_input):
 def get_z_plots_data(model, z_input):
     x_input = model.decode(z_input)
     x_plots = get_x_plots_data(model, x_input)
-    return [pca(z_input)] + x_plots[:-1]
+    return [z_input] + x_plots[:-1]
 
 
 @numpy_output
-# todo
 def get_labelled_plots(model, x_input, labels):
     z = model.encode(x_input, transform=False)
     zt = model.encode(x_input, transform=True)
@@ -125,7 +127,42 @@ def generate_and_save_image(plots_data, iter_no, image_label, scatter_size=0.5, 
     return img, iter_no
 
 
-class GanTrainer(BaseTrainer):
+def make_grid(tensor, nrow=8, padding=2,
+              normalize=False, scale_each=False):
+    """Code based on https://github.com/pytorch/vision/blob/master/torchvision/utils.py"""
+    nmaps = tensor.shape[0]
+    xmaps = min(nrow, nmaps)
+    ymaps = int(math.ceil(float(nmaps) / xmaps))
+    height, width = int(tensor.shape[1] + padding), int(tensor.shape[2] + padding)
+    grid = np.zeros([height * ymaps + 1 + padding // 2, width * xmaps + 1 + padding // 2, 3], dtype=np.float16)
+    k = 0
+    for y in range(ymaps):
+        for x in range(xmaps):
+            if k >= nmaps:
+                break
+            h, h_width = y * height + 1 + padding // 2, height - padding
+            w, w_width = x * width + 1 + padding // 2, width - padding
+
+            grid[h:h + h_width, w:w + w_width] = tensor[k]
+            k = k + 1
+    return grid
+
+
+def save_image(tensor, filename=None, nrow=8, padding=2,
+               normalize=False, scale_each=False):
+
+    tensor = tensor[:, 0, :, :,None]
+    ndarr = make_grid(tensor, nrow=nrow, padding=padding,
+                      normalize=normalize, scale_each=scale_each)
+    # img = Image.fromarray(ndarr)
+
+    h, w, c = ndarr.shape
+    ndarr = ndarr.transpose([2, 0, 1])
+    return ndarr[None,:,:,:]
+    # img.save(filename)
+
+
+class GanImgTrainer(BaseTrainer):
     def __init__(self, model, data_loader, hyperparams, train_config, tensorboard_msg='', auto_encoder_dl=None):
         # type: (BaseGan, BaseDataLoader, base_hp.Hyperparams, TrainConfig, str) -> None
 
@@ -141,6 +178,16 @@ class GanTrainer(BaseTrainer):
 
         model.create_params_dir()
 
+        self.recon_dir = '../experiments/' + exp_name + '/images/recon/'
+        self.gen_dir = '../experiments/' + exp_name + '/images/gen/'
+        if not os.path.exists(self.recon_dir):
+            os.makedirs(self.recon_dir)
+
+        if not os.path.exists(self.gen_dir):
+            os.makedirs(self.gen_dir)
+
+        print(os.path.dirname(os.path.realpath(__file__)))
+
         self.writer = {
             'train': SummaryWriter(model.get_log_writer_path('train')),
             'test': SummaryWriter(model.get_log_writer_path('test')),
@@ -155,6 +202,14 @@ class GanTrainer(BaseTrainer):
             'z': model.sample((seed_data.shape[0],)),
         }
 
+        seed_data, seed_labels = data_loader.random_batch('test', self.H.seed_batch_size)
+        self.fixed_seed = {
+            'x': seed_data,
+            'l': seed_labels,
+            'z': model.sample((seed_data.shape[0],)),
+
+        }
+
         seed_data, seed_labels = data_loader.random_batch('train', self.H.seed_batch_size)
         train_seed = {
             'x': seed_data,
@@ -164,12 +219,12 @@ class GanTrainer(BaseTrainer):
 
         self.seed_data = {
             'train': train_seed,
-            'test': test_seed
+            'test': test_seed,
         }
 
         self.pool = Pool(processes=4)
 
-        super(GanTrainer, self).__init__(model, data_loader, self.H.n_iterations)
+        super(GanImgTrainer, self).__init__(model, data_loader, self.H.n_iterations)
 
     def gen_train_limit_reached(self, gen_accuracy):
         return self.n_iter_gen == self.H.gen_iter_count or gen_accuracy >= 80
@@ -223,8 +278,8 @@ class GanTrainer(BaseTrainer):
         print('%s: step %i: z_recon Loss: %.3f' % (exp_name, self.iter_no, metrics['loss_z_recon']))
         print()
 
-    # TODO
     def validation(self):
+        self.model.eval()
         H = self.H
         model = self.model
         dl = self.data_loader
@@ -248,45 +303,36 @@ class GanTrainer(BaseTrainer):
 
             print('Test Iter Time: %.4f' % (iter_time_end - iter_time_start))
             print('------------------------------------------------------------')
+        self.model.train()
 
-    # TODO
     def visualize(self, split):
+        self.model.eval()
         tic_viz = time.time()
         tic_data_prep = time.time()
-        plots_data = get_plot_data(self.model, self.seed_data[split])
+        recon, gen, real = self.save_img(self.seed_data[split])
+        # print(split, 'recon', recon.shape, recon.min(), recon.max())
+        # print(split, 'gen', gen.shape, gen.min(), gen.max())
+        # print(split, 'real', real.shape, real.min(), real.max())
         tac_data_prep = time.time()
         time_data_prep = tac_data_prep - tic_data_prep
 
         writer = self.writer[split]
         image_tag = '%s-plot' % self.model.name
+        iter_no = self.iter_no
 
-        def callback(out):
-            img, iter_no = out
-            writer.add_image(image_tag, img, iter_no)
+        writer.add_image(image_tag + '-recon', recon, iter_no)
+        writer.add_image(image_tag + '-gen', gen, iter_no)
+        writer.add_image(image_tag + '-real', real, iter_no)
 
-        args = (plots_data, self.iter_no)
-        kwargs = {
-            'image_label': image_tag,
-            'scatter_size': 0.5,
-            'log': self.is_console_log_step()
-        }
-        # out = generate_and_save_image(*args, **kwargs)
-        # callback(out)
-        self.pool.apply_async(generate_and_save_image, args, kwargs, callback=callback)
-
-        tac_viz = time.time()
-
-        time_viz = tac_viz - tic_viz
-        if self.is_console_log_step():
-            print('Data Prep     Time: %.4f' % (time_data_prep))
-            print('Visualization Time: %.4f' % (time_viz))
-            print('------------------------------------------------------------')
+        self.model.train()
 
     def train_step_ae(self, x_train, z_train):
         if self.H.train_autoencoder:
             # model.step_train_encoder(x_train, z_train)
             # model.step_train_decoder(z_train)
             self.model.step_train_autoencoder(x_train, z_train)
+
+
 
     def train_step_ad(self, x_train, z_train):
         model = self.model
@@ -311,6 +357,20 @@ class GanTrainer(BaseTrainer):
             self.n_iter_disc += 1
             model.step_train_discriminator(x_train, z_train)
 
+    def save_img(self, test_seed=None):
+        # test_seed = self.fixed_seed if test_seed is None else test_seed
+        x = test_seed['x']
+        z = test_seed['z']
+
+        x_recon = self.model.reconstruct_x(x)
+        x_gen = self.model.decode(z)
+        # shape:[1,c,h,w]
+        recon_img = save_image(x_recon, self.recon_dir + str(self.iter_no) + '.png')
+        gen_img = save_image(x_gen, self.gen_dir + str(self.iter_no) + '.png')
+        real = save_image(x)
+
+        return recon_img, gen_img, real
+
     def full_train_step(self, visualize=True, validation=True, save_params=True):
         dl = self.data_loader
         model = self.model  # type: ImgGAN
@@ -320,35 +380,40 @@ class GanTrainer(BaseTrainer):
 
         x_train, _ = dl.next_batch('train')
         z_train = model.sample((H.batch_size,))
-
         self.train_step_ae(x_train, z_train)
         self.train_step_ad(x_train, z_train)
         # net_id = 1 if self.train_generator else 0
         # self.writer['train'].add_scalar('is_gen', net_id, self.iter_no)
 
         # Train Losses Computation
-        metrics = model.compute_metrics(x_train, z_train)
+        self.model.eval()
+        x_train_batch = self.seed_data['train']['x']
+        z_train_batch = self.seed_data['train']['z']
+
+        metrics = model.compute_metrics(x_train_batch, z_train_batch)
+        self.model.train()
+
         g_acc, d_acc = metrics['accuracy_gen_x'], metrics['accuracy_dis_x']
-
-        # Console Log
-        if self.is_console_log_step():
-            print('============================================================')
-            print('Train Step', self.iter_no + 1)
-            print('%s: step %i:     Disc Acc: %.3f' % (exp_name, self.iter_no, metrics['accuracy_dis_x'].item()))
-            print('%s: step %i:     Gen  Acc: %.3f' % (exp_name, self.iter_no, metrics['accuracy_gen_x'].item()))
-            print('%s: step %i: x_recon Loss: %.3f' % (exp_name, self.iter_no, metrics['loss_x_recon'].item()))
-            print('%s: step %i: z_recon Loss: %.3f' % (exp_name, self.iter_no, metrics['loss_z_recon'].item()))
-            print('------------------------------------------------------------')
-
+        #
+        # # Console Log
+        # if self.is_console_log_step():
+        #     print('============================================================')
+        #     print('Train Step', self.iter_no + 1)
+        #     print('%s: step %i:     Disc Acc: %.3f' % (exp_name, self.iter_no, metrics['accuracy_dis_x'].item()))
+        #     print('%s: step %i:     Gen  Acc: %.3f' % (exp_name, self.iter_no, metrics['accuracy_gen_x'].item()))
+        #     print('%s: step %i: x_recon Loss: %.3f' % (exp_name, self.iter_no, metrics['loss_x_recon'].item()))
+        #     print('%s: step %i: z_recon Loss: %.3f' % (exp_name, self.iter_no, metrics['loss_z_recon'].item()))
+        #     print('------------------------------------------------------------')
+        #
         # Tensorboard Log
         if self.is_tboard_log_step():
             for tag, value in metrics.items():
                 self.writer['train'].add_scalar(tag, value.item(), self.iter_no)
-
+        #
         # Validation Computations
         if validation and self.is_validation_step():
             self.validation()
-
+        #
         # Weights Saving
         if save_params and self.is_params_save_step():
             tic_save = time.time()
@@ -359,7 +424,7 @@ class GanTrainer(BaseTrainer):
                 print('Param Save Time: %.4f' % (save_time))
                 print('------------------------------------------------------------')
 
-        # Visualization
+        # # Visualization
         if visualize and self.is_visualization_step():
             # previous_backend = plt.get_backend()
             # plt.switch_backend('Agg')
@@ -370,14 +435,14 @@ class GanTrainer(BaseTrainer):
         # Switch Training Networks - Gen | Disc
         self.switch_train_mode(g_acc, d_acc)
 
-        iter_time_end = time.time()
-        if self.is_console_log_step():
-            print('Total Iter Time: %.4f' % (iter_time_end - iter_time_start))
-            if self.tensorboard_msg:
-                print('------------------------------------------------------------')
-                print(self.tensorboard_msg)
-            print('============================================================')
-            print()
+        # iter_time_end = time.time()
+        # if self.is_console_log_step():
+        #     print('Total Iter Time: %.4f' % (iter_time_end - iter_time_start))
+        #     if self.tensorboard_msg:
+        #         print('------------------------------------------------------------')
+        #         print(self.tensorboard_msg)
+        #     print('============================================================')
+        #     print()
 
     def resume(self, dir_name, label, iter_no, n_iterations=None):
         self.iter_no = iter_no

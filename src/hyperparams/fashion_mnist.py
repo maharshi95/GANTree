@@ -12,7 +12,7 @@ class Hyperparams(hyperparams.Hyperparams):  # change
     train_generator_adv = True
     train_autoencoder = True
 
-    train_batch_logits = False
+    train_batch_logits = True
     train_sample_logits = True
 
     start_tensorboard = True
@@ -20,7 +20,7 @@ class Hyperparams(hyperparams.Hyperparams):  # change
     circular_bounds = False
 
     gen_iter_count = 20
-    disc_iter_count = 40
+    disc_iter_count = 20
     step_ratio = gen_iter_count, disc_iter_count
 
     disc_type = 'x'  # 'x' or 'z' or 'xz'
@@ -33,7 +33,7 @@ class Hyperparams(hyperparams.Hyperparams):  # change
     logit_z_batch_size = 16
 
     # input_size = 2
-    z_size = 64
+    z_size = 100
 
     # Distribution params
     z_bounds = 10.
@@ -47,10 +47,10 @@ class Hyperparams(hyperparams.Hyperparams):  # change
     z_dist_type = 'normal'  # ['uniform', 'normal', 'sphere']
 
     # model = 'bcgan'
-    exp_name = 'mnist_exp_1'
+    exp_name = 'fasion_mnist_1'
 
     # dataloader = 'four_gaussian_sym'
-    dataloader = 'mnist'
+    dataloader = 'fashion_mnist'
 
     n_child_nodes = 2
 
