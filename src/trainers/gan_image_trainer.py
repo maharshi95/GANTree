@@ -288,7 +288,7 @@ class GanImgTrainer(BaseTrainer):
 
         x_test, _ = dl.next_batch('test')
         z_test = model.sample((x_test.shape[0],))
-        metrics = model.compute_metrics(x_test, z_test)
+        metrics = model.compute_metrics(x_test, z_test,True)
         g_acc, d_acc = metrics['accuracy_gen_x'], metrics['accuracy_dis_x']
 
         # Tensorboard Log
@@ -394,7 +394,7 @@ class GanImgTrainer(BaseTrainer):
         self.model.train()
 
         g_acc, d_acc = metrics['accuracy_gen_x'], metrics['accuracy_dis_x']
-        #
+
         # # Console Log
         # if self.is_console_log_step():
         #     print('============================================================')
@@ -409,6 +409,8 @@ class GanImgTrainer(BaseTrainer):
         if self.is_tboard_log_step():
             for tag, value in metrics.items():
                 self.writer['train'].add_scalar(tag, value.item(), self.iter_no)
+            self.writer['train'].add_scalar('switch_train_mode',int(self.train_generator),self.iter_no)
+
         #
         # Validation Computations
         if validation and self.is_validation_step():

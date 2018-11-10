@@ -161,7 +161,9 @@ class ImgDiscx(BaseModel):
         self.layer = nn.Linear(256 * (2 ** 2), 100)
 
         self.sample_logit_block = NLinear(100, [32, 32, 1])
-        self.batch_logit_block = NLinear(100 * n_batch_logits, [32, 32, 16, 1])
+
+        self.layer1 = nn.Linear(100, 32)
+        self.batch_logit_block = NLinear(32 * n_batch_logits, [32, 32, 1])
 
         self.init_params()
 
@@ -190,11 +192,12 @@ class ImgDiscx(BaseModel):
         z_out = self.layer(out)
 
         # print('z_out_shape', z_out.shape)
-        z_out_view = z_out.view(-1, 100 * self.n_batch_logits)
-        # print('z_out_view',z_out_view.shape)
 
         sample_logits = self.sample_logit_block(z_out)
-        batch_logits = self.batch_logit_block(z_out_view)
+
+        batch_logits_branch_layer1 = self.layer1(z_out)
+        batch_in = batch_logits_branch_layer1.view(-1, 32 * self.n_batch_logits)
+        batch_logits = self.batch_logit_block(batch_in)
 
         return sample_logits, batch_logits
 

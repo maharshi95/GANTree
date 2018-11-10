@@ -16,16 +16,17 @@ from exp_context import ExperimentContext
 from utils.tr_utils import as_np
 from utils.viz_utils import get_x_clf_figure
 
-default_args_str = '-hp hyperparams/mnist.py -d all -en z64_deepernet -t'
+default_args_str = '-hp hyperparams/mnist.py -d all -en z100_deepernet_5 -t'
 
 if Config.use_gpu:
     print('mode: GPU')
     tr.set_default_tensor_type('torch.cuda.FloatTensor')
 
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 # Argument Parsing
 parser = argparse.ArgumentParser()
 
-parser.add_argument('-g', '--gpu', default=0, help='index of the gpu to be used. default: 0')
+parser.add_argument('-g', '--gpu', default=1, help='index of the gpu to be used. default: 0')
 parser.add_argument('-t', '--tensorboard', default=False, const=True, nargs='?', help='Start Tensorboard with the experiment')
 parser.add_argument('-r', '--resume', nargs='?', const=True, default=False,
                     help='if present, the training resumes from the latest step, '
@@ -381,7 +382,7 @@ root.set_trainer(dl, H, train_config, Model=GanImgTrainer)
 # GNode.load('best_node.pickle', root)
 for i in range(20):
     root.train(100000)
-    root.save('../experiments/'+exp_name +'/best_node-'+str(i)+'.pickle')
+    root.save('../experiments/'+exp_name +'/best_node-'+str(i)+'.pt')
 
 # dl_set = {0: dl}
 #

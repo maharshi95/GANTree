@@ -110,13 +110,18 @@ class ImgGAN(BaseGan):
 
             return gen_z_accuracy, disc_z_accuracy
 
-    def get_disc_x_accuracies(self, x, z):
+    def get_disc_x_accuracies(self, x, z, separate_acc=False):
         with tr.no_grad():
             real_labels_x = self.classify_x(x)
             fake_labels_x = self.classify_x(self.decoder(z))
 
             gen_x_accuracy = 100 * (fake_labels_x == 1).type(tr.float32).mean()
             disc_x_accuracy = 50 * ((fake_labels_x == 0).type(tr.float32).mean() + (real_labels_x == 1).type(tr.float32).mean())
+
+            if (separate_acc):
+                disc_x_real_acc = 100 * (real_labels_x == 1).type(tr.float32).mean()
+                disc_x_fake_acc = 100 * (fake_labels_x == 0).type(tr.float32).mean()
+                return gen_x_accuracy, disc_x_accuracy, disc_x_fake_acc, disc_x_real_acc
 
             return gen_x_accuracy, disc_x_accuracy
 
@@ -182,7 +187,7 @@ class ImgGAN(BaseGan):
         return z_recon_loss
 
     def cyclic_loss(self, x, z):
-        c_loss = self.x_recon_loss(x) + self.z_recon_loss(z)
+        c_loss = self.x_recon_loss(x) #+ self.z_recon_loss(z)
         return c_loss
 
     #### Train Methods
@@ -280,19 +285,23 @@ class ImgGAN(BaseGan):
         self.opt['case2'].step()
         return loss
 
-    def compute_metrics(self, x, z):
+    def compute_metrics(self, x, z, disc_real_acc=False):
         with tr.no_grad():
             x_recon_loss = self.x_recon_loss(x)
             z_recon_loss = self.z_recon_loss(z)
             c_loss = x_recon_loss + z_recon_loss
 
-            g_x_acc, d_x_acc = self.get_disc_x_accuracies(x, z)
+            if (disc_real_acc):
+                g_x_acc, d_x_acc, d_x_acc_fake, d_x_acc_real = self.get_disc_x_accuracies(x, z,True)
+            else:
+                g_x_acc, d_x_acc = self.get_disc_x_accuracies(x, z)
+
             g_z_acc, d_z_acc = self.get_disc_z_accuracies(x, z)
 
             g_adv_loss_x, d_adv_loss_x = self.gen_adv_loss_x(z), self.disc_adv_loss_x(x, z)
             g_adv_loss_z, d_adv_loss_z = self.gen_adv_loss_z(x), self.disc_adv_loss_z(x, z)
 
-            return {
+            dict_metrics = {
                 'loss_x_recon': x_recon_loss,
                 'loss_z_recon': z_recon_loss,
                 'loss_cyclic': c_loss,
@@ -310,7 +319,16 @@ class ImgGAN(BaseGan):
                 'accuracy_dis_z': d_z_acc,
             }
 
-    # DO NOT Use below functions for writing training procedures
+            if (disc_real_acc):
+                dict_metrics['d_fake_Acc'] = d_x_acc_fake
+                dict_metrics['d_real_Acc'] = d_x_acc_real
+                return dict_metrics
+
+
+            return dict_metrics
+
+            # DO NOT Use below functions for writing training procedures
+
     @make_tensor(use_gpu=Config.use_gpu)
     def encode(self, x_batch, transform=False, both=False):
         with tr.no_grad():

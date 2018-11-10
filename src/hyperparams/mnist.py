@@ -33,7 +33,7 @@ class Hyperparams(hyperparams.Hyperparams):  # change
     logit_z_batch_size = 16
 
     # input_size = 2
-    z_size = 64
+    z_size = 100
 
     # Distribution params
     z_bounds = 10.
