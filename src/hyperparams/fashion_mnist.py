@@ -19,8 +19,8 @@ class Hyperparams(hyperparams.Hyperparams):  # change
 
     circular_bounds = False
 
-    gen_iter_count = 20
-    disc_iter_count = 20
+    gen_iter_count = 40
+    disc_iter_count = 40
     step_ratio = gen_iter_count, disc_iter_count
 
     disc_type = 'x'  # 'x' or 'z' or 'xz'
@@ -37,7 +37,7 @@ class Hyperparams(hyperparams.Hyperparams):  # change
 
     # Distribution params
     z_bounds = 10.
-    cor = 0.6
+    cor = 0.
 
     # Learning Parameters
     lr_autoencoder = 0.0003
@@ -50,7 +50,7 @@ class Hyperparams(hyperparams.Hyperparams):  # change
     exp_name = 'fasion_mnist_1'
 
     # dataloader = 'four_gaussian_sym'
-    dataloader = 'fashion_mnist'
+    dataloader = 'fashion'
 
     n_child_nodes = 2
 

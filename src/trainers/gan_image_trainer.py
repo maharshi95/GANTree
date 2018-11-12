@@ -45,64 +45,6 @@ exp_name = ExperimentContext.exp_name
 #
 
 
-def get_x_plots_data(model, x_input):
-    _, x_real_true, x_real_false = model.discriminate(x_input)
-
-    z_real_true = model.encode(x_real_true, transform=False)
-    z_real_false = model.encode(x_real_false, transform=False)
-
-    zt_real_true = model.encode(x_real_true, transform=True)
-    zt_real_false = model.encode(x_real_false, transform=True)
-
-    x_recon = model.reconstruct_x(x_input)
-    _, x_recon_true, x_recon_false = model.discriminate(x_recon)
-
-    z_recon_true = model.encode(x_recon_true, transform=False)
-    z_recon_false = model.encode(x_recon_false, transform=False)
-
-    zt_recon_true = model.encode(x_recon_true, transform=True)
-    zt_recon_false = model.encode(x_recon_false, transform=True)
-
-    return [
-        (zt_real_true, zt_real_false),
-        (zt_recon_true, zt_recon_false),
-    ]
-
-
-@numpy_output
-def get_z_plots_data(model, z_input):
-    x_input = model.decode(z_input)
-    x_plots = get_x_plots_data(model, x_input)
-    return [z_input] + x_plots[:-1]
-
-
-@numpy_output
-def get_labelled_plots(model, x_input, labels):
-    z = model.encode(x_input, transform=False)
-    zt = model.encode(x_input, transform=True)
-
-    x_recon = model.decode(zt)
-
-    z_recon = model.encode(x_recon, transform=False)
-    zt_recon = model.encode(x_recon, transform=True)
-
-    # return x_input, z, zt, x_recon, z_recon, zt_recon, labels
-    return x_input, z, zt, x_recon, z, zt, labels
-
-
-def get_plot_data(model, test_seed):
-    x_plots_row1 = get_x_plots_data(model, test_seed['x'])
-    z_plots_row2 = get_z_plots_data(model, test_seed['z'])
-    x_plots_row3 = get_labelled_plots(model, test_seed['x'], test_seed['l'])
-    x_plots_row4 = get_x_plots_data(model, test_seed['x_full'])
-
-    z_data = x_plots_row3[1]
-    zt_data = x_plots_row3[2]
-
-    plots_data = (x_plots_row1, z_plots_row2, x_plots_row3, x_plots_row4, (z_data, zt_data))
-    return plots_data
-
-
 def generate_and_save_image(plots_data, iter_no, image_label, scatter_size=0.5, log=False):
     if log:
         print('------------------------------------------------------------')
@@ -150,15 +92,14 @@ def make_grid(tensor, nrow=8, padding=2,
 
 def save_image(tensor, filename=None, nrow=8, padding=2,
                normalize=False, scale_each=False):
-
-    tensor = tensor[:, 0, :, :,None]
+    tensor = tensor[:, 0, :, :, None]
     ndarr = make_grid(tensor, nrow=nrow, padding=padding,
                       normalize=normalize, scale_each=scale_each)
     # img = Image.fromarray(ndarr)
 
     h, w, c = ndarr.shape
     ndarr = ndarr.transpose([2, 0, 1])
-    return ndarr[None,:,:,:]
+    return ndarr[None, :, :, :]
     # img.save(filename)
 
 
@@ -288,7 +229,7 @@ class GanImgTrainer(BaseTrainer):
 
         x_test, _ = dl.next_batch('test')
         z_test = model.sample((x_test.shape[0],))
-        metrics = model.compute_metrics(x_test, z_test,True)
+        metrics = model.compute_metrics(x_test, z_test, True)
         g_acc, d_acc = metrics['accuracy_gen_x'], metrics['accuracy_dis_x']
 
         # Tensorboard Log
@@ -331,8 +272,6 @@ class GanImgTrainer(BaseTrainer):
             # model.step_train_encoder(x_train, z_train)
             # model.step_train_decoder(z_train)
             self.model.step_train_autoencoder(x_train, z_train)
-
-
 
     def train_step_ad(self, x_train, z_train):
         model = self.model
@@ -409,7 +348,7 @@ class GanImgTrainer(BaseTrainer):
         if self.is_tboard_log_step():
             for tag, value in metrics.items():
                 self.writer['train'].add_scalar(tag, value.item(), self.iter_no)
-            self.writer['train'].add_scalar('switch_train_mode',int(self.train_generator),self.iter_no)
+            self.writer['train'].add_scalar('switch_train_mode', int(self.train_generator), self.iter_no)
 
         #
         # Validation Computations

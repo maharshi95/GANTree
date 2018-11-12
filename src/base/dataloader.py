@@ -58,7 +58,7 @@ class BaseDataLoader(object):
     def next_batch(self, split):
         start = self.batch_index[split] * self.batch_size[split]
         end = start + self.batch_size[split]
-        self.batch_index[split] = (self.batch_size[split] + 1) % self.n_batches[split]
+        self.batch_index[split] = (self.batch_index[split] + 1) % self.n_batches[split]
 
         if self.batch_index[split] == 0:
             self.shuffle(split)
@@ -88,7 +88,7 @@ class BaseDataLoader(object):
 
     @tensor_output(use_gpu=Config.use_gpu)
     def get_full_space(self, n_samples=1000, bounds=4.0):
-        return np.random.uniform(-bounds, bounds, (n_samples, self.input_size))
+        return np.random.uniform(-bounds, bounds, (n_samples, self.input_size)).astype('float32')
 
     @tensor_output(use_gpu=Config.use_gpu)
     def get_z_dist(self, n_samples, dist_type, bounds=1):

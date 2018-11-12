@@ -1,7 +1,7 @@
 from __future__ import print_function, division
 import os, argparse, logging, json
 
-os.environ['CUDA_VISIBLE_DEVICES'] = "0"
+os.environ['CUDA_VISIBLE_DEVICES'] = "1"
 
 import pickle
 import sys, time
@@ -20,7 +20,7 @@ from matplotlib import pyplot as plt
 from configs import Config
 from exp_context import ExperimentContext
 
-default_args_str = '-hp base/hyperparams.py -d all -en exp18_toy_full_split_with_cutoff_thresholds -g 1'
+default_args_str = '-hp base/hyperparams.py -d all -en exp22_toy_gantree_disc_z -g 1'
 
 if Config.use_gpu:
     print('mode: GPU')
@@ -420,8 +420,8 @@ def train_node(node, x_clf_iters, gan_iters, min_gan_iters, x_clf_lim, x_recon_l
 
 def find_next_node():
     logger.info(colored('Leaf Nodes: %s' % str(list(leaf_nodes)), 'green', attrs=['bold']))
-    likelihoods = {i: tree.nodes[i].mean_likelihood(dl_set[i].data['train']) for i in  leaf_nodes}
-    n_samples = {i: dl_set[i].data['train'].shape[0] for i in  leaf_nodes}
+    likelihoods = {i: tree.nodes[i].mean_likelihood(dl_set[i].data['train']) for i in leaf_nodes}
+    n_samples = {i: dl_set[i].data['train'].shape[0] for i in leaf_nodes}
     pairs = [(node_id, n_samples[node_id], likelihoods[node_id]) for node_id in leaf_nodes]
     for pair in pairs:
         logger.info('Node: %2d N_Samples: %5d Likelihood %.03f' % (pair[0], pair[1], pair[2]))
@@ -444,9 +444,10 @@ root = tree.create_child_node(dist_params, gan)
 
 root.set_trainer(dl, H, train_config)
 
-GNode.load('9g_root.pickle', root)
-# root.train(20000)
-# root.save('9g_root.pickle')
+# GNode.load('9g_root.pickle', root)
+logger.info(colored('Training Root Node for GAN Training', 'green', attrs=['bold']))
+root.train(20000)
+root.save('toy_root_disc_z.pickle')
 
 dl_set = {0: dl}
 

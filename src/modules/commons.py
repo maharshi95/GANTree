@@ -2,6 +2,8 @@ from collections import namedtuple
 
 import torch as tr
 from torch import nn
+from torch.nn import functional as F
+
 from configs import Config
 from utils.tr_utils import ellipse_params, rotate
 
@@ -90,3 +92,42 @@ class ZTransform(nn.Module):
         x = self.target_transform.normalize(x)
         x = self.src_transform.denormalize(x)
         return x
+
+
+#     use only when h == w for an image
+def get_padding(stride, in_dim, kernel_dim, out_dim=None, mode='SAME'):
+    k = kernel_dim
+    if out_dim == None:
+        out_dim = (in_dim + stride - 1) // stride
+    if mode.lower() == 'same':
+        val = stride * (out_dim - 1) - in_dim + k
+        if val % 2 == 0:
+            p1, p2 = val // 2, val // 2
+        else:
+            p1, p2 = (val + 1) // 2, (val + 1) // 2
+        return (p1, p2, p1, p2)
+
+
+class ConvBlock(nn.Module):
+    def __init__(self, in_filters, out_filters, bn=True, kernel_size=3, stride=2, padding=None):
+        super(ConvBlock, self).__init__()
+        self.stride = stride
+        self.padding = padding
+        self.kernel = kernel_size
+
+        layers = [nn.Conv2d(in_filters, out_filters, kernel_size=kernel_size, stride=stride)]
+        if bn:
+            layers.append(nn.BatchNorm2d(out_filters, 0.8))
+        layers.append(nn.LeakyReLU(0.2, inplace=True))
+
+        self.conv_block = nn.Sequential(*layers)
+
+    def forward(self, input):
+        padding = self.padding
+        if isinstance(padding, str):
+            padding = get_padding(self.stride, input.shape[2], self.kernel, mode=self.padding)
+        elif padding is None:
+            padding = 0
+        input = F.pad(input, padding)
+        input = self.conv_block(input)
+        return input
