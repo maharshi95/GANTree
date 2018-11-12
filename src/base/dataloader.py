@@ -88,7 +88,7 @@ class BaseDataLoader(object):
 
     @tensor_output(use_gpu=Config.use_gpu)
     def get_full_space(self, n_samples=1000, bounds=4.0):
-        return np.random.uniform(-bounds, bounds, (n_samples, self.input_size))
+        return np.random.uniform(-bounds, bounds, (n_samples, self.input_size)).astype('float32')
 
     @tensor_output(use_gpu=Config.use_gpu)
     def get_z_dist(self, n_samples, dist_type, bounds=1):

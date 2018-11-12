@@ -15,6 +15,8 @@ TrainConfig = namedtuple(
 class Config:
     use_gpu = torch.cuda.is_available()
 
+    dtype = torch.float32
+
     base_port = 8001
 
     default_train_config = TrainConfig(

@@ -1,6 +1,8 @@
 from __future__ import print_function, division
 import os, argparse, logging, json
 
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+
 import sys, time
 from multiprocessing import Pool
 from multiprocessing.pool import ApplyResult
@@ -11,18 +13,13 @@ import numpy as np
 import torch as tr
 from matplotlib import pyplot as plt
 from configs import Config
-from dataloaders.custom_loader import CustomDataLoader
-from exp_context import ExperimentContext
-from utils.tr_utils import as_np
-from utils.viz_utils import get_x_clf_figure
 
-default_args_str = '-hp hyperparams/digit_mnist.py -d all -en z100_deepernet_5 -t'
+default_args_str = '-hp hyperparams/fashion_mnist.py -d all -en exp20_mnist_fashion'
 
 if Config.use_gpu:
     print('mode: GPU')
     tr.set_default_tensor_type('torch.cuda.FloatTensor')
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 # Argument Parsing
 parser = argparse.ArgumentParser()
 
@@ -44,10 +41,16 @@ print(json.dumps(args.__dict__, indent=2))
 
 resume_flag = args.resume is not False
 
+from exp_context import ExperimentContext
+
 ###### Set Experiment Context ######
 ExperimentContext.set_context(args.hyperparams, args.exp_name)
 H = ExperimentContext.Hyperparams  # type: Hyperparams
 exp_name = ExperimentContext.exp_name
+
+from dataloaders.custom_loader import CustomDataLoader
+from utils.tr_utils import as_np
+from utils.viz_utils import get_x_clf_figure
 
 ##########  Set Logging  ###########
 logger = logging.getLogger(__name__)
@@ -78,7 +81,7 @@ model_utils.setup_dirs()
 from dataloaders.factory import DataLoaderFactory
 from base.hyperparams import Hyperparams
 from trainers.gan_image_trainer import GanImgTrainer
-from models.images.gan import ImgGAN
+from models.fashion.gan import ImgGAN
 from models.toy.gt.gantree import GanTree
 from models.toy.gt.gnode import GNode
 from models.toy.gt.utils import DistParams
@@ -110,13 +113,12 @@ hyperparams_string_content = json.dumps(H.__dict__, default=lambda x: repr(x), i
 with open(Paths.exp_hyperparams_file, "w") as fp:
     fp.write(hyperparams_string_content)
 
-print(H.__dict__)
 train_config = TrainConfig(
-    n_step_tboard_log=50,
+    n_step_tboard_log=25,
     n_step_console_log=-1,
     n_step_validation=100,
-    n_step_save_params=2000,
-    n_step_visualize=100
+    n_step_save_params=2500,
+    n_step_visualize=500
 )
 
 
@@ -371,7 +373,7 @@ means = as_np(gan.z_op_params.means)
 cov = as_np(gan.z_op_params.cov)
 dist_params = DistParams(means=means, cov=cov, pi=1.0, prob=1.0)
 
-dl = DataLoaderFactory.get_dataloader(H.dataloader, H.batch_size, H.batch_size, )
+dl = DataLoaderFactory.get_dataloader(H.dataloader, H.batch_size, H.batch_size)
 
 x_seed, l_seed = dl.random_batch('test', 32)
 
@@ -380,10 +382,10 @@ root = tree.create_child_node(dist_params, gan)
 
 root.set_trainer(dl, H, train_config, Model=GanImgTrainer)
 
-# GNode.load('best_node.pickle', root)
+# # GNode.load('best_node.pickle', root)
 for i in range(20):
     root.train(5000)
-    root.save('../experiments/'+exp_name +'/best_node-'+str(i)+'.pt')
+    root.save('../experiments/' + exp_name + '/best_node-' + str(i) + '.pt')
 
 # dl_set = {0: dl}
 #

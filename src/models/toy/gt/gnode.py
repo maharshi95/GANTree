@@ -10,10 +10,39 @@ from torch import nn, optim
 
 from models import losses
 from models.toy.gan import ToyGAN
-from utils import np_utils, tr_utils
+from utils import np_utils, tr_utils, viz_utils
 from utils.tr_utils import as_np
 from .named_tuples import DistParams
 from trainers.gan_trainer import GanTrainer
+
+
+class GMM(object):
+    def __init__(self, means, cov, weights):
+        self.means = means
+        self.cov = cov
+        self.weights = weights
+
+
+class LeafNodeException(Exception):
+    pass
+
+
+def disallow_leafs(f):
+    def inner(self, *args, **kwargs):
+        if self.is_leaf:
+            raise LeafNodeException('%s called on leaf node.' % f.__name__)
+        return f(*args, **kwargs)
+
+    return inner
+
+
+def allow_only_leafs(f):
+    def inner(self, *args, **kwargs):
+        if not self.is_leaf:
+            raise LeafNodeException('%s called on a non leaf node.' % f.__name__)
+        return f(*args, **kwargs)
+
+    return inner
 
 
 class GNode(nn.Module):
@@ -77,6 +106,18 @@ class GNode(nn.Module):
         return len(self.child_ids)
 
     @property
+    def left(self):
+        return self.get_child(0)
+
+    @property
+    def right(self):
+        return self.get_child(1)
+
+    @property
+    def ellipse(self, color='red', scales=3.0):
+        return viz_utils.get_ellipse(self.prior_means, self.prior_cov, scales=scales, color=color)
+
+    @property
     def parent_name(self):
         return 'nullNode' if self.parent is None else self.parent.name
 
@@ -111,7 +152,7 @@ class GNode(nn.Module):
             self.prior_prob = prior_prob
             self.prob = self.prior_prob if self.parent is None else self.parent.prob * self.prior_prob
 
-        # self.gan.z_op_params = self.prior_means, self.prior_cov
+        self.gan.z_op_params = self.prior_means, self.prior_cov
 
     def get_child(self, index):
         # type: (int) -> GNode
@@ -161,9 +202,9 @@ class GNode(nn.Module):
 
         return X, preds
 
-    def fit_gmm(self, X, n_components=2, max_iter=1000):
-        if self.gmm is None:
-            self.gmm = GaussianMixture(n_components=n_components, max_iter=max_iter, warm_start=True)
+    def fit_gmm(self, X, n_components=2, max_iter=1000, warm_start=True):
+        if self.gmm is None or warm_start == False:
+            self.gmm = GaussianMixture(n_components=n_components, max_iter=max_iter, warm_start=False)
         else:
             self.gmm.n_components = n_components
             self.gmm.max_iter = max_iter
@@ -205,6 +246,23 @@ class GNode(nn.Module):
             parent.child_ids.append(self.id)
             parent.child_nodes[self.id] = self
 
+    def set_child_nodes(self, child_nodes):
+        # type: (list[GNode]) -> None
+        means = []
+        cov = []
+        weights = []
+        for node in child_nodes:
+            self.child_nodes[node.id] = node
+            self.child_ids.append(node.id)
+
+            means.append(node.prior_means)
+            cov.append(node.prior_cov)
+            weights.append(node.prior_prob)
+
+        self.gmm.means_ = np.array(means, dtype='float32')
+        self.gmm.covariances_ = np.array(cov, dtype='float32')
+        self.gmm.weights_ = np.array(weights, dtype='float32')
+
     def remove_child(self, child_id):
         self.child_ids.remove(child_id)
         del self.child_nodes[child_id]
@@ -226,7 +284,7 @@ class GNode(nn.Module):
     def train(self, *args, **kwargs):
         self.trainer.train(*args, **kwargs)
 
-    def step_train_x_clf(self, x_batch):
+    def step_train_x_clf(self, x_batch, clip=0.0):
         id1, id2 = self.child_ids
 
         node1 = self.child_nodes[id1]
@@ -239,7 +297,7 @@ class GNode(nn.Module):
 
         x_recon, preds = self.post_gmm_decode(z_batch)
 
-        x_clf_loss = losses.x_clf_loss(mu1, cov1, w1, mu2, cov2, w2, z_batch)
+        x_clf_loss = tr.max(tr.tensor(clip), losses.x_clf_loss(mu1, cov1, w1, mu2, cov2, w2, z_batch))
 
         x_loss_vector = tr.sum((x_recon - x_batch) ** 2, dim=-1)
         c = Counter([a for a in preds])
@@ -254,7 +312,7 @@ class GNode(nn.Module):
 
         _, sigmas, _ = tr.svd(cov)
 
-        loss = x_recon_loss + 10.0 * x_clf_loss + 1e-5 * tr.sum(sigmas ** 2)
+        loss = x_recon_loss + 100.0 * x_clf_loss + 1e-5 * tr.sum(sigmas ** 2)
 
         self.opt_xc.zero_grad()
         loss.backward(retain_graph=True)

@@ -35,7 +35,7 @@ def generate_multi_gaussian_samples(means, cov, ratio, num_samples):
         else:
             n_samples = num_samples - count_samples
         samples = np.random.multivariate_normal(np.array(means[i]), cov=np.eye(means.shape[-1]) * cov[i], size=n_samples)
-        X.append(samples)
+        X.append(samples.astype('float32'))
         labels.extend([i] * n_samples)
 
     X = np.concatenate(X)
@@ -136,7 +136,8 @@ class NineGaussiansDataLoader(BaseDataLoader):
         sigma = np.array(std) * np.random.uniform(0.8, 1.2, 9)
         ratio = np_utils.prob_dist(np.random.uniform(3, 9, 9))
 
-        X, labels = generate_multi_gaussian_samples(means=mu, cov=sigma, ratio=ratio, num_samples=num_samples)
+        X, labels = generate_multi_gaussian_samples(means=mu.astype('float32'), cov=sigma.astype('float32'),
+                                                    ratio=ratio.astype('float32'), num_samples=num_samples)
 
         n_train = int(train_ratio * X.shape[0])
 

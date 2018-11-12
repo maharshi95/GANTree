@@ -7,17 +7,19 @@ from base.model import BaseGan
 from configs import Config
 from exp_context import ExperimentContext
 from models import losses
-from models.toy.nets import ToyEncoder, ToyDecoder, ToyDisc
+from .nets import ImgDiscx, ImgDiscz, ImgDecoder, ImgEncoder
 from modules.commons import ZTransform
+
 from utils.decorators import make_tensor, tensorify
 
 H = ExperimentContext.Hyperparams  # type: Hyperparams
 
 
-class ToyGAN(BaseGan):
-    def __init__(self, name, z_op_params, z_ip_params=None,
-                 encoder=None, decoder=None, disc_x=None, disc_z=None, z_bounds=H.z_bounds):
-        super(ToyGAN, self).__init__(name)
+class ImgGAN(BaseGan):
+
+    def __init__(self, name, z_op_params, z_ip_params=None, encoder=None, decoder=None, disc_x=None, disc_z=None,
+                 z_bounds=H.z_bounds):
+        super(ImgGAN, self).__init__(name)
 
         if isinstance(z_op_params, int):
             z_op_params = tr.zeros(z_op_params), tr.eye(z_op_params)
@@ -28,10 +30,10 @@ class ToyGAN(BaseGan):
 
         self.transform = ZTransform(z_op_params, z_ip_params)
 
-        self.encoder = encoder or ToyEncoder(out_feat=self.z_size, out_scale=z_bounds)
-        self.decoder = decoder or ToyDecoder(in_feat=self.z_size)
-        self.disc_x = disc_x or ToyDisc(in_feat=2, n_batch_logits=H.logit_x_batch_size)
-        self.disc_z = disc_z or ToyDisc(in_feat=2, n_batch_logits=H.logit_z_batch_size)
+        self.encoder = encoder or ImgEncoder(self.z_size, out_scale=z_bounds)
+        self.decoder = decoder or ImgDecoder(self.z_size, out_scale=z_bounds)
+        self.disc_x = disc_x or ImgDiscx(n_batch_logits=H.logit_x_batch_size)
+        self.disc_z = disc_z or ImgDiscz(n_batch_logits=H.logit_z_batch_size)
 
         if Config.use_gpu:
             self.cuda()
@@ -57,9 +59,9 @@ class ToyGAN(BaseGan):
 
     @staticmethod
     def create_from_hyperparams(name, hyperparams, cov_sign='+'):
-        # type: (str, Hyperparams, str) -> ToyGAN
+        # type: (str, Hyperparams, str) -> ImgGAN
         z_op_params = hyperparams.z_means(), hyperparams.z_cov(cov_sign)
-        return ToyGAN(name, z_op_params, z_bounds=hyperparams.z_bounds)
+        return ImgGAN(name, z_op_params, z_bounds=hyperparams.z_bounds)
 
     @property
     def z_op_params(self):
@@ -82,7 +84,7 @@ class ToyGAN(BaseGan):
         return self.encoder.z_bounds
 
     def forward(self, *args):
-        return super(ToyGAN, self).forward(*args)
+        return super(ImgGAN, self).forward(*args)
 
     def sample(self, sample_shape, dist='in', z_bounds=4.0):
         params = self.z_ip_params if dist == 'in' else self.z_op_params
@@ -107,13 +109,18 @@ class ToyGAN(BaseGan):
 
             return gen_z_accuracy, disc_z_accuracy
 
-    def get_disc_x_accuracies(self, x, z):
+    def get_disc_x_accuracies(self, x, z, separate_acc=False):
         with tr.no_grad():
             real_labels_x = self.classify_x(x)
             fake_labels_x = self.classify_x(self.decoder(z))
 
             gen_x_accuracy = 100 * (fake_labels_x == 1).type(tr.float32).mean()
             disc_x_accuracy = 50 * ((fake_labels_x == 0).type(tr.float32).mean() + (real_labels_x == 1).type(tr.float32).mean())
+
+            if (separate_acc):
+                disc_x_real_acc = 100 * (real_labels_x == 1).type(tr.float32).mean()
+                disc_x_fake_acc = 100 * (fake_labels_x == 0).type(tr.float32).mean()
+                return gen_x_accuracy, disc_x_accuracy, disc_x_fake_acc, disc_x_real_acc
 
             return gen_x_accuracy, disc_x_accuracy
 
@@ -166,17 +173,20 @@ class ToyGAN(BaseGan):
     def x_recon_loss(self, x):
         # x_recon = self.decoder(self.transform(self.encoder(x)))
         x_recon = self.decoder(self.encoder(x))
-        x_recon_loss = tr.mean((x - x_recon) ** 2)
+        error_vectors = ((x - x_recon) ** 2).view(x.shape[0], -1)
+        x_recon_loss = tr.mean(tr.sum(error_vectors, dim=-1))
         return x_recon_loss
 
     def z_recon_loss(self, z):
         # z_recon = self.transform(self.encoder(self.decoder(z)))
         z_recon = self.encoder(self.decoder(z))
-        z_recon_loss = tr.mean((z - z_recon) ** 2)
+        error_vectors = ((z - z_recon) ** 2).view(z.shape[0], -1)
+
+        z_recon_loss = tr.mean(tr.sum(error_vectors, dim=-1))
         return z_recon_loss
 
     def cyclic_loss(self, x, z):
-        c_loss = 10 * self.x_recon_loss(x) + self.z_recon_loss(z)
+        c_loss = self.x_recon_loss(x)  # + self.z_recon_loss(z)
         return c_loss
 
     #### Train Methods
@@ -204,19 +214,21 @@ class ToyGAN(BaseGan):
 
     def step_train_gen_z(self, x):
         self.opt['encoder'].zero_grad()
-        loss_x = 0.1 * self.gen_adv_loss_z(x)
+        loss_x = self.gen_adv_loss_z(x)
         loss_x.backward()
         self.opt['encoder'].step()
         return loss_x
 
     def step_train_discriminator(self, x, z):
         loss_x = self.step_train_disc_x(x, z)
-        loss_z = self.step_train_disc_z(x, z)
+        # loss_z = self.step_train_disc_z(x, z)
+        loss_z = loss_x
         return loss_x, loss_z
 
     def step_train_generator(self, x, z):
         loss_x = self.step_train_gen_x(z)
-        loss_z = self.step_train_gen_z(x)
+        # loss_z = self.step_train_gen_z(x)
+        loss_z = loss_x
         return loss_x, loss_z
 
     def step_train_autoencoder(self, x, z):
@@ -224,6 +236,7 @@ class ToyGAN(BaseGan):
         self.opt['decoder_c'].zero_grad()
 
         loss = self.cyclic_loss(x, z)
+        # loss = self.x_recon_loss(x)
         loss.backward()
 
         self.opt['encoder_c'].step()
@@ -271,19 +284,23 @@ class ToyGAN(BaseGan):
         self.opt['case2'].step()
         return loss
 
-    def compute_metrics(self, x, z):
+    def compute_metrics(self, x, z, disc_real_acc=False):
         with tr.no_grad():
             x_recon_loss = self.x_recon_loss(x)
             z_recon_loss = self.z_recon_loss(z)
             c_loss = x_recon_loss + z_recon_loss
 
-            g_x_acc, d_x_acc = self.get_disc_x_accuracies(x, z)
+            if (disc_real_acc):
+                g_x_acc, d_x_acc, d_x_acc_fake, d_x_acc_real = self.get_disc_x_accuracies(x, z, True)
+            else:
+                g_x_acc, d_x_acc = self.get_disc_x_accuracies(x, z)
+
             g_z_acc, d_z_acc = self.get_disc_z_accuracies(x, z)
 
             g_adv_loss_x, d_adv_loss_x = self.gen_adv_loss_x(z), self.disc_adv_loss_x(x, z)
-            g_adv_loss_z, d_adv_loss_z = self.gen_adv_loss_z(z), self.disc_adv_loss_z(x, z)
+            g_adv_loss_z, d_adv_loss_z = self.gen_adv_loss_z(x), self.disc_adv_loss_z(x, z)
 
-            return {
+            dict_metrics = {
                 'loss_x_recon': x_recon_loss,
                 'loss_z_recon': z_recon_loss,
                 'loss_cyclic': c_loss,
@@ -301,7 +318,15 @@ class ToyGAN(BaseGan):
                 'accuracy_dis_z': d_z_acc,
             }
 
-    # DO NOT Use below functions for writing training procedures
+            if (disc_real_acc):
+                dict_metrics['d_fake_Acc'] = d_x_acc_fake
+                dict_metrics['d_real_Acc'] = d_x_acc_real
+                return dict_metrics
+
+            return dict_metrics
+
+            # DO NOT Use below functions for writing training procedures
+
     @make_tensor(use_gpu=Config.use_gpu)
     def encode(self, x_batch, transform=False, both=False):
         with tr.no_grad():

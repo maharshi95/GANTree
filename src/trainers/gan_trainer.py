@@ -139,7 +139,7 @@ class GanTrainer(BaseTrainer):
             'x': seed_data,
             'l': seed_labels,
             'z': model.sample((seed_data.shape[0],)),
-            'x_full': data_loader.get_full_space(bounds=6.0)
+            'x_full': data_loader.get_full_space(bounds=6.0, n_samples=1024)
         }
 
         seed_data, seed_labels = data_loader.random_batch('train', self.H.seed_batch_size)
@@ -147,7 +147,7 @@ class GanTrainer(BaseTrainer):
             'x': seed_data,
             'l': seed_labels,
             'z': model.sample((seed_data.shape[0],)),
-            'x_full': data_loader.get_full_space(bounds=6.0)
+            'x_full': data_loader.get_full_space(bounds=6.0, n_samples=1024)
         }
 
         self.seed_data = {
@@ -271,8 +271,6 @@ class GanTrainer(BaseTrainer):
 
     def train_step_ae(self, x_train, z_train):
         if self.H.train_autoencoder:
-            # model.step_train_encoder(x_train, z_train)
-            # model.step_train_decoder(z_train)
             self.model.step_train_autoencoder(x_train, z_train)
 
     def train_step_ad(self, x_train, z_train):

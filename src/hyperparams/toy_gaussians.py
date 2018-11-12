@@ -15,7 +15,7 @@ class Hyperparams:
     train_generator_adv = True
     train_autoencoder = True
 
-    train_batch_logits = True
+    train_batch_logits = False
     train_sample_logits = True
 
     start_tensorboard = True
@@ -29,8 +29,8 @@ class Hyperparams:
     disc_type = 'x'  # 'x' or 'z' or 'xz'
 
     # Dimension Parameters
-    batch_size = 256
-    seed_batch_size = 2048
+    batch_size = 64
+    seed_batch_size = 32
 
     logit_x_batch_size = 16
     logit_z_batch_size = 16
@@ -40,7 +40,7 @@ class Hyperparams:
 
     # Distribution params
     z_bounds = 10.0
-    cor = 0.0
+    cor = 0.6
 
     # Learning Parameters
     lr_autoencoder = 0.0001
@@ -53,7 +53,7 @@ class Hyperparams:
     exp_name = 'trial_with_gmms'
 
     # dataloader = 'four_gaussian_sym'
-    dataloader = 'nine_gaussian'
+    dataloader = 'mnist'
 
     n_child_nodes = 2
 

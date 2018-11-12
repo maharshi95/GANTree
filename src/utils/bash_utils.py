@@ -6,8 +6,8 @@ import traceback
 logger = logging.getLogger(__name__)
 
 
-def exec_cmd(cmd, log_find=True, bg=False):
-    if log_find: logger.info(cmd)
+def exec_cmd(cmd, log_flag=False, bg=False):
+    # if log_flag: logger.info(cmd)
     if bg:
         os.system('{} &'.format(cmd))
     else:
