@@ -363,9 +363,11 @@ def train_phase_2(node, n_iterations, min_iters, x_clf_limit, x_recon_limit):
                 full_train_step(node.child_nodes[i], dl_set[i], visualize=False)
                 pbar.update(n=0.5)
 
-            x_clf_train_batch, _ = dl_set[node_id].next_batch('train')
-            z_batch, x_recon, x_recon_loss, x_clf_loss, loss = node.step_train_x_clf(x_clf_train_batch, clip=x_clf_limit)
-            node.trainer.writer['train'].add_scalar('x_clf_loss', x_clf_loss, iter_no)
+            x_batch_left, _ = dl_set[node.left.id].next_batch('train')
+            x_batch_right, _ = dl_set[node.right.id].next_batch('train')
+
+            x_recon_loss, x_clf_loss, loss = node.step_train_x_clf_fixed(x_batch_left, x_batch_right, clip=x_clf_limit)
+            node.trainer.writer['train'].add_scalar('x_clf_loss_post', x_clf_loss, iter_no)
 
             if is_gan_vis_iter(iter_no):
                 visualize_plots(iter_no, node, x_seed, l_seed, tag='phase2_plot')

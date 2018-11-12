@@ -166,13 +166,13 @@ class ToyGAN(BaseGan):
     def x_recon_loss(self, x):
         # x_recon = self.decoder(self.transform(self.encoder(x)))
         x_recon = self.decoder(self.encoder(x))
-        x_recon_loss = tr.mean((x - x_recon) ** 2)
+        x_recon_loss = tr.sum(((x - x_recon) ** 2), dim=-1).mean()
         return x_recon_loss
 
     def z_recon_loss(self, z):
         # z_recon = self.transform(self.encoder(self.decoder(z)))
         z_recon = self.encoder(self.decoder(z))
-        z_recon_loss = tr.mean((z - z_recon) ** 2)
+        z_recon_loss = tr.sum(((z - z_recon) ** 2), dim=-1).mean()
         return z_recon_loss
 
     def cyclic_loss(self, x, z):
