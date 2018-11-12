@@ -320,6 +320,38 @@ class GNode(nn.Module):
 
         return z_batch, x_recon, x_recon_loss, x_clf_loss, loss
 
+    def step_train_x_clf_fixed(self, x_batch_left, x_batch_right, clip=0.0):
+
+        mu1, cov1, w1 = self.left.tensor_params
+        mu2, cov2, w2 = self.right.tensor_params
+
+        z_batch_left = self.post_gmm_encoder.forward(x_batch_left)
+        z_batch_right = self.post_gmm_encoder.forward(x_batch_right)
+
+        x_recon_left = self.left.gan.decoder(z_batch_left)
+        x_recon_right = self.right.gan.decoder(z_batch_right)
+
+        x_clf_loss = tr.max(tr.tensor(clip), losses.x_clf_loss_fixed(mu1, cov1, w1, mu2, cov2, w2, z_batch_left, z_batch_right))
+
+        x_recon_loss_left = tr.sum((x_recon_left - x_batch_left) ** 2, dim=-1).mean()
+        x_recon_loss_right = tr.sum((x_recon_right - x_batch_right) ** 2, dim=-1).mean()
+        x_recon_loss = x_recon_loss_left + x_recon_loss_right
+
+        # _, cov_left = tr_utils.mu_cov(z_batch_left)
+        # _, sigmas_left, _ = tr.svd(cov_left)
+        #
+        # _, cov_right = tr_utils.mu_cov(z_batch_right)
+        # _, sigmas_right, _ = tr.svd(cov_right)
+
+        # Don't need regularization, since mu, cov are freezed
+        loss = x_recon_loss + 100.0 * x_clf_loss  # + 1e-5 * tr.sum(sigmas_left ** 2)
+
+        self.opt_xc.zero_grad()
+        loss.backward(retain_graph=True)
+        self.opt_xc.step()
+
+        return x_recon_loss, x_clf_loss, loss
+
     def set_train_flag(self, mode):
         super(GNode, self).train(mode)
 
