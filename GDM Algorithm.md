@@ -59,7 +59,7 @@ REPEAT till saturation:
 ```
 Procedure: ModeSeperationMethod
 Inputs   : node (GAN-Node)
-
+ 
 REPEAT untill saturation:
     X ~ dataset(node.id)
     
