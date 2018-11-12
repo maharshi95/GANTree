@@ -222,13 +222,13 @@ class ImgGAN(BaseGan):
 
     def step_train_discriminator(self, x, z):
         loss_x = self.step_train_disc_x(x, z)
-        # loss_z = self.step_train_disc_z(x, z)
+        loss_z = self.step_train_disc_z(x, z)
         loss_z = loss_x
         return loss_x, loss_z
 
     def step_train_generator(self, x, z):
         loss_x = self.step_train_gen_x(z)
-        # loss_z = self.step_train_gen_z(x)
+        loss_z = self.step_train_gen_z(x)
         loss_z = loss_x
         return loss_x, loss_z
 

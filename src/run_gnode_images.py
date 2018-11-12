@@ -16,7 +16,7 @@ from exp_context import ExperimentContext
 from utils.tr_utils import as_np
 from utils.viz_utils import get_x_clf_figure
 
-default_args_str = '-hp hyperparams/mnist.py -d all -en 3_complete_without_BL -t'
+default_args_str = '-hp hyperparams/mnist.py -d all -en 4_exp -t'
 
 if Config.use_gpu:
     print('mode: GPU')

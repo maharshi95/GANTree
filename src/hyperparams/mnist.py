@@ -12,7 +12,7 @@ class Hyperparams(hyperparams.Hyperparams):  # change
     train_generator_adv = True
     train_autoencoder = True
 
-    train_batch_logits = False
+    train_batch_logits = True
     train_sample_logits = True
 
     start_tensorboard = True

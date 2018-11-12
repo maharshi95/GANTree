@@ -308,24 +308,27 @@ class GanImgTrainer(BaseTrainer):
             print('------------------------------------------------------------')
         self.model.train()
 
+
     def visualize(self, split):
         self.model.eval()
-
+        tic_viz = time.time()    # def visualize(self, split):
+        tic_data_prep = time.time()    #     self.model.eval()
         recon, gen, real = self.save_img(self.seed_data[split])
+        # print(split, 'recon', recon.shape, recon.min(), recon.max())        # recon, gen, real = self.save_img(self.seed_data[split])
+        # print(split, 'gen', gen.shape, gen.min(), gen.max())
+        # print(split, 'real', real.shape, real.min(), real.max())        # writer = self.writer[split]
+        tac_data_prep = time.time()        # image_tag = '%s-plot' % self.model.name
+        time_data_prep = tac_data_prep - tic_data_prep        # iter_no = self.iter_no
 
-        writer = self.writer[split]
-        image_tag = '%s-plot' % self.model.name
-        iter_no = self.iter_no
-
-        def callback(item):
-            real, recon, gen, image_tag, iter_no = item
-            writer.add_image(image_tag + '-recon', recon, iter_no)
-            writer.add_image(image_tag + '-gen', gen, iter_no)
-            writer.add_image(image_tag + '-real', real, iter_no)
-
-        self.pool.apply_async(log_images, (real, recon, gen, image_tag, iter_no), callback=callback)
-
-        self.model.train()
+        writer = self.writer[split]        # def callback(item):
+        image_tag = '%s-plot' % self.model.name        #     real, recon, gen, image_tag, iter_no = item
+        iter_no = self.iter_no        #     writer.add_image(image_tag + '-recon', recon, iter_no)
+        #     writer.add_image(image_tag + '-gen', gen, iter_no)
+        writer.add_image(image_tag + '-recon', recon, iter_no)        #     writer.add_image(image_tag + '-real', real, iter_no)
+        writer.add_image(image_tag + '-gen', gen, iter_no)
+        writer.add_image(image_tag + '-real', real, iter_no)        # self.pool.apply_async(log_images, (real, recon, gen, image_tag, iter_no), callback=callback)
+        #
+        self.model.train()        # self.model.train()
 
     def train_step_ae(self, x_train, z_train):
         if self.H.train_autoencoder:
