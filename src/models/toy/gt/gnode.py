@@ -206,8 +206,9 @@ class GNode(nn.Module):
         if self.gmm is None or warm_start == False:
             self.gmm = GaussianMixture(n_components=n_components, max_iter=max_iter, warm_start=False)
         else:
-            self.gmm.n_components = n_components
-            self.gmm.max_iter = max_iter
+            self.gmm = GaussianMixture(n_components=n_components, max_iter=max_iter, means_init=self.gmm.means_,
+                                       precisions_init=self.gmm.precisions_, weights_init=self.gmm.weights_)
+
         Z = self.post_gmm_encode(X, transform=False)
         self.gmm.fit(Z)
 
@@ -274,6 +275,7 @@ class GNode(nn.Module):
     def set_trainer(self, dataloader, hyperparams, train_config, msg='', Model=GanTrainer):
         self.trainer = Model(self.gan, dataloader, hyperparams, train_config, tensorboard_msg=msg)
 
+    #  Phase one optimizers classifier
     def set_optimizer(self):
         encoder_params = list(self.post_gmm_encoder.parameters())
         decoders = self.post_gmm_decoders
@@ -344,7 +346,7 @@ class GNode(nn.Module):
         # _, sigmas_right, _ = tr.svd(cov_right)
 
         # Don't need regularization, since mu, cov are freezed
-        loss = x_recon_loss + 100.0 * x_clf_loss  # + 1e-5 * tr.sum(sigmas_left ** 2)
+        loss = x_recon_loss + x_clf_loss  # + 1e-5 * tr.sum(sigmas_left ** 2)
 
         self.opt_xc.zero_grad()
         loss.backward(retain_graph=True)

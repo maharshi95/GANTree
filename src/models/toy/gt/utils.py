@@ -46,7 +46,7 @@ class GNodeUtils:
         return new_node
 
     @staticmethod
-    def split_node(parent, n_child, x_batch, base_id, fixed=True):
+    def split_node(parent, n_child, x_batch, base_id, fixed=False):
         # type: (GNode, int, np.ndarray, int, bool) -> list[GNode]
 
         logger.info('Starting Split Process: %s' % parent)
@@ -71,7 +71,7 @@ class GNodeUtils:
                 cov = np.eye(n_dim)
             else:
                 means = parent.gmm.means_[i_child]
-                cov = parent.gmm.covariances_[-i_child]
+                cov = parent.gmm.covariances_[i_child]
 
             child_model = Model(name=model_name,
                                 z_op_params=(tr.Tensor(means), tr.Tensor(cov)),

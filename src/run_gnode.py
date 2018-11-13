@@ -20,7 +20,7 @@ from matplotlib import pyplot as plt
 from configs import Config
 from exp_context import ExperimentContext
 
-default_args_str = '-hp base/hyperparams.py -d all -en exp22_toy_gantree_disc_z -g 1'
+default_args_str = '-hp base/hyperparams.py -d all -en exp_1_toy_gan -g 1'
 
 if Config.use_gpu:
     print('mode: GPU')
@@ -302,9 +302,9 @@ def save_node(node, tag=None, iter=None):
     # type: (GNode, str, int) -> None
     filename = node.name
     if tag is not None:
-        filename += str(tag)
+        filename += '_' + str(tag)
     if iter is not None:
-        filename += ('%05d' % iter)
+        filename += ('_%05d' % iter)
     filename = filename + '.pt'
     filepath = os.path.join(Paths.weight_dir_path(''), filename)
     node.save(filepath)
@@ -339,7 +339,10 @@ def train_phase_1(node, n_iterations):
             node.trainer.writer['train'].add_scalar('x_recon_loss', x_recon_loss, iter_no)
             node.trainer.writer['train'].add_scalar('loss', loss, iter_no)
 
-            node.fit_gmm(x_seed)
+            node.fit_gmm(x_seed, max_iter=100)
+            node.trainer.writer['train'].add_scalar('x_mean_left', node.left.prior_means[0], iter_no)
+            node.trainer.writer['train'].add_scalar('x_mean_right', node.right.prior_means[0], iter_no)
+
             if i < 10 or i < 500 and i % 10 == 0 or i % 100 == 0:
                 visualize_plots(iter_no=i, node=node, x_batch=x_seed, labels=l_seed, tag='phase1_plot')
                 save_node(node, 'half', iter_no)
@@ -363,18 +366,19 @@ def train_phase_2(node, n_iterations, min_iters, x_clf_limit, x_recon_limit):
                 full_train_step(node.child_nodes[i], dl_set[i], visualize=False)
                 pbar.update(n=0.5)
 
-            x_batch_left, _ = dl_set[node.left.id].next_batch('train')
-            x_batch_right, _ = dl_set[node.right.id].next_batch('train')
-
-            x_recon_loss, x_clf_loss, loss = node.step_train_x_clf_fixed(x_batch_left, x_batch_right, clip=x_clf_limit)
-            node.trainer.writer['train'].add_scalar('x_clf_loss_post', x_clf_loss, iter_no)
+            # x_batch_left, _ = dl_set[node.left.id].next_batch('train')
+            # x_batch_right, _ = dl_set[node.right.id].next_batch('train')
+            #
+            # x_recon_loss, x_clf_loss, loss = node.step_train_x_clf_fixed(x_batch_left, x_batch_right, clip=x_clf_limit)
+            # node.trainer.writer['train'].add_scalar('x_clf_loss_post', x_clf_loss, iter_no)
 
             if is_gan_vis_iter(iter_no):
                 visualize_plots(iter_no, node, x_seed, l_seed, tag='phase2_plot')
-                save_node(node, 'full', iter_no)
+                save_node(node.left, 'full', iter_no)
+                save_node(node.right, 'full', iter_no)
 
-            if iter_no >= min_iters and x_clf_loss <= x_clf_limit * (1.0001) and x_recon_loss <= x_recon_limit * (1.0001):
-                break
+            # if iter_no >= min_iters and x_clf_loss <= x_clf_limit * (1.0001) and x_recon_loss <= x_recon_limit * (1.0001):
+            #     break
 
 
 def train_node(node, x_clf_iters, gan_iters, min_gan_iters, x_clf_lim, x_recon_limit):
@@ -402,7 +406,7 @@ def train_node(node, x_clf_iters, gan_iters, min_gan_iters, x_clf_lim, x_recon_l
 
     train_phase_2(node, gan_iters, min_iters=min_gan_iters, x_clf_limit=x_clf_lim, x_recon_limit=x_recon_limit)
 
-    split_dataloader(node)
+    # split_dataloader(node)
 
     for cid, cnode in node.child_nodes.items():
         save_node(cnode, 'full')
@@ -446,10 +450,11 @@ root = tree.create_child_node(dist_params, gan)
 
 root.set_trainer(dl, H, train_config)
 
-# GNode.load('9g_root.pickle', root)
-logger.info(colored('Training Root Node for GAN Training', 'green', attrs=['bold']))
-root.train(20000)
-root.save('toy_root_disc_z.pickle')
+GNode.load('toy_root.pickle', root)
+# logger.info(colored('Training Root Node for GAN Training', 'green', attrs=['bold']))
+# root.train(20000)
+# root.save('toy_root_disc_z.pickle')
+
 
 dl_set = {0: dl}
 
@@ -464,14 +469,23 @@ future_objects = []  # type: list[ApplyResult]
 pool = Pool(processes=16)
 
 bash_utils.create_dir(Paths.weight_dir_path(''), log_flag=False)
-for i_modes in range(8):
-    node_id = find_next_node()
-    logger.info(colored('Next Node to split: %d' % node_id, 'green', attrs=['bold']))
-    node = tree.nodes[node_id]
-    train_node(node, x_clf_iters=1000, gan_iters=20000, min_gan_iters=5000, x_clf_lim=0.00001, x_recon_limit=0.004)
-    leaf_nodes.remove(node_id)
-    leaf_nodes.update(node.child_ids)
-    print('')
+
+node_id = find_next_node()
+
+# S+=2
+
+logger.info(colored('Next Node to split: %d' % node_id, 'green', attrs=['bold']))
+node = tree.nodes[node_id]
+train_node(node, x_clf_iters=1000, gan_iters=20000, min_gan_iters=5000, x_clf_lim=0.00001, x_recon_limit=0.004)
+
+# for i_modes in range(8):
+#     node_id = find_next_node()
+#     logger.info(colored('Next Node to split: %d' % node_id, 'green', attrs=['bold']))
+#     node = tree.nodes[node_id]
+#     train_node(node, x_clf_iters=1000, gan_iters=20000, min_gan_iters=5000, x_clf_lim=0.00001, x_recon_limit=0.004)
+#     leaf_nodes.remove(node_id)
+#     leaf_nodes.update(node.child_ids)
+#     print('')
 
 # root.save('best_root_phase1.pickle')
 # root.get_child(0).save('best_child0_phase1.pickle')

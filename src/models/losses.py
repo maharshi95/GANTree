@@ -3,6 +3,8 @@ from torch import distributions as dist
 from torch.nn import functional as F
 from torch.nn.modules import loss
 
+from utils import tr_utils
+
 
 def x_clf_loss_v1(means1, cov1, means2, cov2, z1, z2):
     f1 = dist.MultivariateNormal(means1, cov1)
@@ -52,25 +54,43 @@ def x_clf_loss(mu1, sig1, w1, mu2, sig2, w2, z):
     return loss
 
 
+def kl_loss_parametric(mu1, mu2, sig1, sig2):
+    m2 = mu2
+    m1 = mu1
+
+    loss = (tr.trace(sig2.inverse().mm(sig1)) + (m2 - m1).t().mm(sig2.inverse()).mm(m2 - m1) - m1.shape[0] + tr.log(
+        tr.det(sig2)) - tr.log(tr.det(sig1))) / 2.
+
+    return loss
+
+
 def x_clf_loss_fixed(mu1, sig1, w1, mu2, sig2, w2, z1, z2):
     f1 = dist.MultivariateNormal(mu1, sig1)
     f2 = dist.MultivariateNormal(mu2, sig2)
 
-    p_z1_m1 = f1.log_prob(z1) + tr.log(w1)
-    p_z1_m2 = f2.log_prob(z1) + tr.log(w2)
+    # p_z1_m1 = f1.log_prob(z1) + tr.log(w1)
+    # p_z1_m2 = f2.log_prob(z1) + tr.log(w2)
+    #
+    # p_z2_m1 = f1.log_prob(z2) + tr.log(w1)
+    # p_z2_m2 = f2.log_prob(z2) + tr.log(w2)
+    #
+    # p_z1 = log_prob_sum(p_z1_m1, p_z1_m2)
+    # p_z2 = log_prob_sum(p_z2_m1, p_z2_m2)
+    #
+    # p_m1_z1 = p_z1_m1 - p_z1
+    # p_m2_z2 = p_z2_m2 - p_z2
+    #
+    # loss = - p_m1_z1 - p_m2_z2
 
-    p_z2_m1 = f1.log_prob(z2) + tr.log(w1)
-    p_z2_m2 = f2.log_prob(z2) + tr.log(w2)
+    # loss = - f1.log_prob(z1) - f2.log_prob(z2)
 
-    p_z1 = p_z1_m1 + p_z1_m2
-    p_z2 = p_z2_m1 + p_z2_m2
+    # loss = loss.mean()
 
-    p_m1_z1 = p_z1_m1 - p_z1
-    p_m2_z2 = p_z2_m2 - p_z2
+    z_mu1, z_sig1 = tr_utils.mu_cov(z1)
+    z_mu2, z_sig2 = tr_utils.mu_cov(z2)
 
-    loss = - p_m1_z1 - p_m2_z2
+    loss = kl_loss_parametric(mu1[:,None], z_mu1.t(), sig1, z_sig1) + kl_loss_parametric(mu2[:,None], z_mu2.t(), sig2, z_sig2)
 
-    loss = loss.mean()
     return loss
 
 
