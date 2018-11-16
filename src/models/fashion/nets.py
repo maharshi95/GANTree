@@ -63,7 +63,7 @@ class ImgEncoder(BaseModel):
         return z
 
     def copy(self, *args, **kwargs):
-        return super(ImgEncoder, self).copy(out_scale=self._np_out_scale)
+        return super(ImgEncoder, self).copy(self.z_size,out_scale=self._np_out_scale)
 
     @property
     def z_bounds(self):
@@ -75,6 +75,7 @@ class ImgDecoder(BaseModel):
         """
         Using Padding Formula output = (input - 1) * stride - 2 * padding + kernel + output_padding
         """
+        self.z_size = z_size
         super(ImgDecoder, self).__init__()
 
         self._np_out_scale = out_scale
@@ -113,7 +114,7 @@ class ImgDecoder(BaseModel):
         return z
 
     def copy(self, *args, **kwargs):
-        return super(ImgDecoder, self).copy(out_scale=self._np_out_scale)
+        return super(ImgDecoder, self).copy(self.z_size,out_scale=self._np_out_scale)
 
 
 class ImgDiscx(BaseModel):
@@ -167,7 +168,7 @@ class ImgDiscx(BaseModel):
             return preds[:, 0]
 
     def copy(self, *args, **kwargs):
-        return super(ImgDiscx, self).copy(n_batch_logits=self._np_n_batch_logits)
+        return super(ImgDiscx, self).copy(n_batch_logits=self.n_batch_logits)
 
 
 class ImgDiscz(BaseModel):
@@ -203,4 +204,4 @@ class ImgDiscz(BaseModel):
             return preds[:, 0]
 
     def copy(self, *args, **kwargs):
-        return super(ImgDiscz, self).copy(n_batch_logits=self._np_n_batch_logits)
+        return super(ImgDiscz, self).copy(n_batch_logits=self.n_batch_logits)

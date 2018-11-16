@@ -1,5 +1,6 @@
 from __future__ import print_function, division
 import os, argparse, logging, json
+from termcolor import colored
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
@@ -14,7 +15,7 @@ import torch as tr
 from matplotlib import pyplot as plt
 from configs import Config
 
-default_args_str = '-hp hyperparams/digit_mnist.py -en mxp_1_trial'
+default_args_str = '-hp hyperparams/digit_mnist.py -en mnist_start -t'
 
 if Config.use_gpu:
     print('mode: GPU')
@@ -118,7 +119,7 @@ train_config = TrainConfig(
     n_step_console_log=-1,
     n_step_validation=100,
     n_step_save_params=2000,
-    n_step_visualize=100
+    n_step_visualize=300
 )
 
 
@@ -222,6 +223,31 @@ def relabel_samples(node):
         dl_set[i] = CustomDataLoader.create_from_parent(dl, full_data_tuples[i])
 
 
+def split_dataloader(node):
+    dl = dl_set[node.id]
+
+    train_splits, train_split_index = node.split_x(dl.data['train'], Z_flag=True)
+    test_splits, test_split_index = node.split_x(dl.data['test'], Z_flag=True)
+
+    index = 4 if dl.supervised else 2
+
+    for i in node.child_ids:
+        train_labels = dl.labels['train'][train_split_index[i]] if dl.supervised else None
+        test_labels = dl.labels['test'][test_split_index[i]] if dl.supervised else None
+
+        data_tuples = (
+            train_splits[i],
+            test_splits[i],
+            train_labels,
+            test_labels
+        )
+        dl_set[i] = CustomDataLoader.create_from_parent(dl, data_tuples[:index])
+        # seed_data[i] = dl_set[i].random_batch('train', 64)
+    # seed_data_pkfile = 'seed_data-13.pickle'
+    # with open(seed_data_pkfile, 'w') as fp:
+    #     pickle.dump(seed_data, fp)
+
+
 # nodes[1].update_dist_params(means=2 * np.ones(2), cov=np.eye(2), prior_prob=1)
 # nodes[2].update_dist_params(means=- 2 * np.ones(2), cov=np.eye(2), prior_prob=1)
 
@@ -268,14 +294,14 @@ def get_plot_data(iter_no, node, x_batch, labels):
             node.get_child(0).dist_params,
             node.get_child(1).dist_params
         ], [
-            z_batch_pre,
-            z_batch_post,
+            z_batch_pre[:, 0:2],
+            z_batch_post[:, 0:2],
             x_recon_pre,
             x_recon_post
         ], [
-            as_np(z_rand0),
+            as_np(z_rand0[:, 0:2]),
             as_np(x_fake0),
-            as_np(z_rand1),
+            as_np(z_rand1[:, 0:2]),
             as_np(x_fake1),
         ]
     ]
@@ -283,7 +309,7 @@ def get_plot_data(iter_no, node, x_batch, labels):
 
 
 def generate_plots(plot_data, iter_no, tag):
-    fig = get_x_clf_figure(plot_data)
+    fig = get_x_clf_figure(plot_data, n_modes=10)
     path = Paths.get_result_path('%s_%03d' % (tag, iter_no))
     fig.savefig(path)
     plt.close(fig)
@@ -297,8 +323,26 @@ def visualize_plots(iter_no, node, x_batch, labels, tag):
     return future
 
 
+# batch_size multiple of 256
+def get_z(node, batch_size):
+    Z = tr.tensor([])
+
+    iter = batch_size // 256
+
+    for i in range(iter):
+        x = dl.random_batch(split='train', batch_size=256)[0]
+        z = node.post_gmm_encode(x)
+        Z = tr.cat((Z, z), 0)
+        # print('gmm iter',iter)
+    return Z
+
+
 def train_phase_1(node, n_iterations):
-    node.fit_gmm(x_seed)
+    # print('entered phase 1')
+    Z = get_z(node=node, batch_size=2048)
+    # print('train phase 1: got Z')
+    node.fit_gmm(x_seed, Z=Z, max_iter=10)
+
     visualize_plots(iter_no=0, node=node, x_batch=x_seed, labels=l_seed, tag='x_clf_plots')
 
     with tqdm(total=n_iterations) as pbar:
@@ -309,13 +353,18 @@ def train_phase_1(node, n_iterations):
 
             # Training common encoder over cross-classification loss with a batch across common dataloader
             x_clf_train_batch, _ = dl_set[0].next_batch('train')
-            z_batch, x_recon, x_recon_loss, x_clf_loss, loss = node.step_train_x_clf(x_clf_train_batch)
+            z_batch, x_recon, x_recon_loss, x_clf_loss, loss,loss_c1,loss_c2 = node.step_train_x_clf(x_clf_train_batch)
 
             node.trainer.writer['train'].add_scalar('x_clf_loss', x_clf_loss, iter_no)
             node.trainer.writer['train'].add_scalar('x_recon_loss', x_recon_loss, iter_no)
             node.trainer.writer['train'].add_scalar('loss', loss, iter_no)
+            node.trainer.writer['train'].add_scalar('loss_from_cov1', loss,loss_c1, iter_no)
+            node.trainer.writer['train'].add_scalar('loss_deom_cov2', loss_c2, iter_no)
 
-            node.fit_gmm(x_seed)
+            Z = get_z(node=node, batch_size=2048)
+
+            node.fit_gmm(x_seed, Z=Z, max_iter=5)
+
             if i < 10 or i % 10 == 0:
                 visualize_plots(iter_no=i, node=node, x_batch=x_seed, labels=l_seed, tag='x_clf_plots')
             pbar.update(n=1)
@@ -336,27 +385,26 @@ def train_phase_2(node, n_iterations):
                 full_train_step(node.child_nodes[i], dl_set[i], visualize=False)
                 pbar.update(n=0.5)
             # root.fit_gmm(x_seed)
-            if is_gan_vis_iter(iter_no):
-                visualize_plots(iter_no, root, x_seed, l_seed, tag='gan_plots')
+            # if is_gan_vis_iter(iter_no):
+            #     visualize_plots(iter_no, root, x_seed, l_seed, tag='gan_plots')
 
 
 def train_node(node, x_clf_iters=200, gan_iters=10000):
     # type: (GNode, int, int) -> None
     global future_objects
+
     child_nodes = tree.split_node(node, fixed=False)
-
-    nodes = {node.id: node for node in child_nodes}  # type: dict[int, GNode]
-
-    relabel_samples(node)
-
-    nodes[1].set_trainer(dl_set[1], H, train_config)
-    nodes[2].set_trainer(dl_set[2], H, train_config)
-
-    future_objects = []  # type: list[ApplyResult]
 
     train_phase_1(node, x_clf_iters)
 
-    relabel_samples(node)
+    nodes = {node.id: node for node in child_nodes}  # type: dict[int, GNode]
+
+    split_dataloader(node)
+
+    nodes[1].set_trainer(dl_set[1], H, train_config, Model=GanImgTrainer)
+    nodes[2].set_trainer(dl_set[2], H, train_config, Model=GanImgTrainer)
+
+    future_objects = []  # type: list[ApplyResult]
 
     train_phase_2(node, gan_iters)
     # Logging the image savingh operations status
@@ -368,6 +416,35 @@ def train_node(node, x_clf_iters=200, gan_iters=10000):
             print('Failed saving figure for iter %d' % iter_no)
 
 
+def likelihood(node, dl):
+    samples = dl.data['train'].shape[0]
+    # print('count of samples',samples)
+    X_complete = dl.data['train']
+    iter = samples // 256
+    p = np.zeros([iter],dtype=np.float32)
+
+    for idx in range(iter):
+        p[idx] = node.mean_likelihood(X_complete[(idx) * 256:(idx + 1) * 256])
+    # print (p)
+    return np.mean(p)
+
+
+def find_next_node():
+    logger.info(colored('Leaf Nodes: %s' % str(list(leaf_nodes)), 'green', attrs=['bold']))
+    likelihoods = {i: likelihood(tree.nodes[i], dl_set[i]) for i in leaf_nodes}
+    n_samples = {i: dl_set[i].data['train'].shape[0] for i in leaf_nodes}
+    pairs = [(node_id, n_samples[node_id], likelihoods[node_id]) for node_id in leaf_nodes]
+    for pair in pairs:
+        logger.info('Node: %2d N_Samples: %5d Likelihood %.03f' % (pair[0], pair[1], pair[2]))
+    min_samples = min(n_samples)
+    for leaf_id in leaf_nodes:
+        if n_samples[leaf_id] > 3 * min_samples:
+            return max(leaf_nodes, key=lambda i: n_samples[i])
+    return min(leaf_nodes, key=lambda i: likelihoods[i])
+
+
+#  node 0
+
 gan = ImgGAN.create_from_hyperparams('node0', H, '0')
 means = as_np(gan.z_op_params.means)
 cov = as_np(gan.z_op_params.cov)
@@ -375,12 +452,39 @@ dist_params = DistParams(means=means, cov=cov, pi=1.0, prob=1.0)
 
 dl = DataLoaderFactory.get_dataloader(H.dataloader, H.batch_size, H.batch_size)
 
-x_seed, l_seed = dl.random_batch('test', 32)
+x_seed, l_seed = dl.random_batch('test', 512)
 
 tree = GanTree('gtree', ImgGAN, H, x_seed)
 root = tree.create_child_node(dist_params, gan)
 
 root.set_trainer(dl, H, train_config, Model=GanImgTrainer)
+
+GNode.load('./best_node-10.pt', root)
+
+node_id = find_next_node()
+
+logger.info(colored('Next Node to split: %d' % node_id, 'green', attrs=['bold']))
+node = tree.nodes[node_id]
+train_node(node, x_clf_iters=1500, gan_iters=20000)  # , min_gan_iters=5000, x_clf_lim=0.00001, x_recon_limit=0.004)
+
+# node.post_gmm_encode
+# GNode.load('best_node.pickle', root)
+# for i in range(20):
+#     root.train(5000)
+#     root.save('../experiments/' + exp_name + '/best_node-' + str(i) + '.pt')
+
+# dl_set = {0: dl}
+# leaf_nodes = {0}
+# future_objects = []  # type: list[ApplyResult]
+#
+# bash_utils.create_dir(Paths.weight_dir_path(''), log_flag=False)
+# pool = Pool(processes=16)
+# node_id = find_next_node()
+
+
+# logger.info(colored('Next Node to split: %d' % node_id, 'green', attrs=['bold']))
+# node = tree.nodes[node_id]
+# train_node(node, x_clf_iters=1500, gan_iters=20000)  # , min_gan_iters=5000, x_clf_lim=0.00001, x_recon_limit=0.004)
 
 # # GNode.load('best_node.pickle', root)
 # for i in range(20):

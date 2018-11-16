@@ -1,3 +1,4 @@
+
 from __future__ import absolute_import
 import pickle
 from collections import Counter
@@ -14,6 +15,14 @@ from utils import np_utils, tr_utils, viz_utils
 from utils.tr_utils import as_np
 from .named_tuples import DistParams
 from trainers.gan_trainer import GanTrainer
+import logging
+
+##########  Set Logging  ###########
+logger = logging.getLogger(__name__)
+
+
+# LOG_FORMAT = "[{}: %(filename)s: %(lineno)3s] %(levelname)s: %(funcName)s(): %(message)s".format(ExperimentContext.exp_name)
+# logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
 
 class GMM(object):
@@ -184,7 +193,8 @@ class GNode(nn.Module):
         return self.get_child(0).gan.encode(X, transform) if not self.is_leaf else self.gan.encode(X, transform)
 
     def pre_gmm_decode(self, Z):
-        return self.gan.decoder(self.gan.transform(Z))
+        return self.gan.decoder(Z)
+        # return self.gan.decoder(self.gan.transform(Z))
 
     def post_gmm_decode(self, Z):
         preds = self.gmm.predict(as_np((Z)))
@@ -198,20 +208,20 @@ class GNode(nn.Module):
         x_mode0 = gan0.decoder.forward(Z)
         x_mode1 = gan1.decoder.forward(Z)
 
-        X = tr.where(tr.tensor(preds[:, None]) == 0, x_mode0, x_mode1)
+        X = tr.where(tr.tensor(preds[:, None, None, None]) == 0, x_mode0, x_mode1)
 
         return X, preds
 
-    def fit_gmm(self, X, n_components=2, max_iter=1000, warm_start=True):
+    def fit_gmm(self, X, n_components=2, max_iter=100, warm_start=True, Z=None):
         if self.gmm is None or warm_start == False:
             self.gmm = GaussianMixture(n_components=n_components, max_iter=max_iter, warm_start=False)
         else:
             self.gmm = GaussianMixture(n_components=n_components, max_iter=max_iter, means_init=self.gmm.means_,
                                        precisions_init=self.gmm.precisions_, weights_init=self.gmm.weights_)
 
-        Z = self.post_gmm_encode(X, transform=False)
+        Z = self.post_gmm_encode(X, transform=False) if Z is None else Z
+        # print(Z.shape)
         self.gmm.fit(Z)
-
         for i in range(self.n_child):
             self.get_child(i).update_dist_params(self.gmm.means_[i], self.gmm.covariances_[i], self.gmm.weights_[i])
 
@@ -301,7 +311,10 @@ class GNode(nn.Module):
 
         x_clf_loss = tr.max(tr.tensor(clip), losses.x_clf_loss(mu1, cov1, w1, mu2, cov2, w2, z_batch))
 
-        x_loss_vector = tr.sum((x_recon - x_batch) ** 2, dim=-1)
+        batch_size = x_recon.shape[0]
+
+        x_loss_vector = tr.sum((x_recon.view([batch_size, -1]) - x_batch.view([batch_size, -1])) ** 2, dim=-1)
+
         c = Counter([a for a in preds])
         weights = tr.Tensor([
             1.0 / np.maximum(c[0], 1e-9),
@@ -314,13 +327,20 @@ class GNode(nn.Module):
 
         _, sigmas, _ = tr.svd(cov)
 
-        loss = x_recon_loss + 100.0 * x_clf_loss + 1e-5 * tr.sum(sigmas ** 2)
+        sig_sv1 = tr.clamp(tr.svd(cov1)[1], 1e-5) ** 2
+        sig_sv2 = tr.clamp(tr.svd(cov2)[1], 1e-5) ** 2
+
+        loss_cov1 = tr.sum(1 / sig_sv1)
+        loss_cov2 = tr.sum(1 / sig_sv2)
+
+        # print('cov2 loss ', loss_cov2, 'conv1 loss ', loss_cov1)
+        loss = x_recon_loss + 100.0 * x_clf_loss + 1e-4 * (tr.sum(sig_sv1) + tr.sum(sig_sv2) + loss_cov1 + loss_cov2)
 
         self.opt_xc.zero_grad()
         loss.backward(retain_graph=True)
         self.opt_xc.step()
 
-        return z_batch, x_recon, x_recon_loss, x_clf_loss, loss
+        return z_batch, x_recon, x_recon_loss, x_clf_loss, loss , loss_cov1,loss_cov2
 
     def step_train_x_clf_fixed(self, x_batch_left, x_batch_right, clip=0.0):
 
@@ -379,7 +399,7 @@ class GNode(nn.Module):
 
     def sample_x_batch(self, n_samples=1):
         z_batch = self.sample_z_batch(n_samples)
-        return self.gan.decode(z_batch)
+        return self.gan.decode(x)
 
     def predict_z(self, Z, probs=False):
         if Z.shape[0] == 0:
@@ -415,8 +435,19 @@ class GNode(nn.Module):
         i_splits = {l: R[np.where(Y == l)] for l in labels}
         return z_splits, i_splits
 
-    def split_x(self, X):
-        Z = self.post_gmm_encode(X)
+    def encoder_helper(self, X):
+        samples = X.shape[0]
+        iter = samples // 256
+        z = tr.tensor([])
+        for idx in range(iter):
+            tempz = self.post_gmm_encode(X[(idx) * 256:(idx + 1) * 256])
+            z = tr.cat((z, tempz), 0)
+
+        return z
+
+    def split_x(self, X, Z_flag=False):
+
+        Z = self.post_gmm_encode(X) if not Z_flag else self.encoder_helper(X)
         z_splits, i_splits = self.split_z(Z)
         x_splits = {l: X[i_split] for l, i_split in i_splits.items()}
         return x_splits, i_splits

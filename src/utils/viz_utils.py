@@ -15,7 +15,7 @@ from utils.tr_utils import as_np
 
 H = ExperimentContext.Hyperparams
 
-bounds = 10
+bounds = 12
 
 
 def scatter_2d(ax, data, s=0.5, c=None, marker=None, linewidths=None, *args, **kwargs):
@@ -199,38 +199,39 @@ def get_x_clf_figure(plot_data, n_modes=9):
 
     fig = plt.figure(figsize=(12, 12))
 
-    ax = fig.add_subplot(331)
-    ax.set_xlim(-b, b)
-    ax.set_ylim(-b, b)
-    scatter_2d(ax, x_batch, c=colors)
+    #
+    # ax = fig.add_subplot(331)
+    # ax.set_xlim(-b, b)
+    # ax.set_ylim(-b, b)
+    # scatter_2d(ax, x_batch, c=colors)
 
-    ax = fig.add_subplot(332)
-    ax.set_xlim(-b, b)
-    ax.set_ylim(-b, b)
-    scatter_2d(ax, x_recon_post, c=colors)
+    # ax = fig.add_subplot(332)
+    # ax.set_xlim(-b, b)
+    # ax.set_ylim(-b, b)
+    # scatter_2d(ax, x_recon_post, c=colors)
 
     ax = fig.add_subplot(333)
     ax.set_xlim(-b, b)
     ax.set_ylim(-b, b)
     scatter_2d(ax, z_batch_post, c=colors)
-    plot_ellipse(ax, ch0_means, ch0_cov, color='red')
-    plot_ellipse(ax, ch1_means, ch1_cov, color='blue')
+    plot_ellipse(ax, ch0_means[:2], ch0_cov[0:2,0:2], color='red')
+    plot_ellipse(ax, ch1_means[:2], ch1_cov[0:2,0:2], color='blue')
 
-    ax = fig.add_subplot(334)
-    ax.set_xlim(-b, b)
-    ax.set_ylim(-b, b)
-    scatter_2d(ax, x_batch)
+    # ax = fig.add_subplot(334)
+    # ax.set_xlim(-b, b)
+    # ax.set_ylim(-b, b)
+    # scatter_2d(ax, x_batch)
 
-    ax = fig.add_subplot(335)
-    ax.set_xlim(-b, b)
-    ax.set_ylim(-b, b)
-    scatter_2d(ax, x_recon_pre, c=colors)
+    # ax = fig.add_subplot(335)
+    # ax.set_xlim(-b, b)
+    # ax.set_ylim(-b, b)
+    # scatter_2d(ax, x_recon_pre, c=colors)
 
     ax = fig.add_subplot(336)
     ax.set_xlim(-b, b)
     ax.set_ylim(-b, b)
     scatter_2d(ax, z_batch_pre, c=colors)
-    plot_ellipse(ax, root_means, root_cov, color='red')
+    plot_ellipse(ax, root_means[:2], root_cov[0:2,0:2], color='red')
 
     ax = fig.add_subplot(337)
     ax.set_xlim(-b, b)
@@ -238,10 +239,10 @@ def get_x_clf_figure(plot_data, n_modes=9):
     scatter_2d(ax, z_rand0, c='red')
     scatter_2d(ax, z_rand1, c='blue')
 
-    ax = fig.add_subplot(338)
-    ax.set_xlim(-b, b)
-    ax.set_ylim(-b, b)
-    scatter_2d(ax, x_fake0, c='red')
-    scatter_2d(ax, x_fake1, c='blue')
+    # ax = fig.add_subplot(338)
+    # ax.set_xlim(-b, b)
+    # ax.set_ylim(-b, b)
+    # scatter_2d(ax, x_fake0, c='red')
+    # scatter_2d(ax, x_fake1, c='blue')
 
     return fig

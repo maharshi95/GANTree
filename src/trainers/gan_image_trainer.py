@@ -26,6 +26,7 @@ from exp_context import ExperimentContext
 import math
 from PIL import Image
 
+import imageio as imag
 exp_name = ExperimentContext.exp_name
 
 
@@ -92,19 +93,30 @@ def make_grid(tensor, nrow=8, padding=2,
 
 def save_image(tensor, filename=None, nrow=8, padding=2,
                normalize=False, scale_each=False):
+    # print(type(tensor),tensor.shape)
     tensor = tensor[:, 0, :, :, None]
     ndarr = make_grid(tensor, nrow=nrow, padding=padding,
                       normalize=normalize, scale_each=scale_each)
-    # img = Image.fromarray(ndarr)
+    # print(ndarr.shape)
+    if (filename is not None):
+        # img = Image.fromarray(ndarr)
+        # img.save(filename)
+        imag.imsave(filename,ndarr)
 
-    h, w, c = ndarr.shape
     ndarr = ndarr.transpose([2, 0, 1])
+
+
     return ndarr[None, :, :, :]
-    # img.save(filename)
 
 
 def log_images(real, recon, gen):
     return real, recon, gen
+
+
+def create_folders(folders=[]):
+    for folder in folders:
+        if not os.path.exists(folder):
+            os.makedirs(folder)
 
 
 class GanImgTrainer(BaseTrainer):
@@ -125,12 +137,8 @@ class GanImgTrainer(BaseTrainer):
 
         self.recon_dir = '../experiments/' + exp_name + '/images/recon/'
         self.gen_dir = '../experiments/' + exp_name + '/images/gen/'
-        if not os.path.exists(self.recon_dir):
-            os.makedirs(self.recon_dir)
 
-        if not os.path.exists(self.gen_dir):
-            os.makedirs(self.gen_dir)
-
+        create_folders([self.gen_dir + 'train/', self.gen_dir + 'test/', self.recon_dir + 'train/', self.recon_dir + 'test/', ])
         print(os.path.dirname(os.path.realpath(__file__)))
 
         self.writer = {
@@ -145,14 +153,6 @@ class GanImgTrainer(BaseTrainer):
             'x': seed_data,
             'l': seed_labels,
             'z': model.sample((seed_data.shape[0],)),
-        }
-
-        seed_data, seed_labels = data_loader.random_batch('test', self.H.seed_batch_size)
-        self.fixed_seed = {
-            'x': seed_data,
-            'l': seed_labels,
-            'z': model.sample((seed_data.shape[0],)),
-
         }
 
         seed_data, seed_labels = data_loader.random_batch('train', self.H.seed_batch_size)
@@ -250,27 +250,27 @@ class GanImgTrainer(BaseTrainer):
             print('------------------------------------------------------------')
         self.model.train()
 
-
     def visualize(self, split):
         self.model.eval()
-        tic_viz = time.time()    # def visualize(self, split):
-        tic_data_prep = time.time()    #     self.model.eval()
-        recon, gen, real = self.save_img(self.seed_data[split])
+        tic_viz = time.time()  # def visualize(self, split):
+        tic_data_prep = time.time()  # self.model.eval()
+        recon, gen, real = self.save_img(self.seed_data[split], split=split)
         # print(split, 'recon', recon.shape, recon.min(), recon.max())        # recon, gen, real = self.save_img(self.seed_data[split])
         # print(split, 'gen', gen.shape, gen.min(), gen.max())
         # print(split, 'real', real.shape, real.min(), real.max())        # writer = self.writer[split]
-        tac_data_prep = time.time()        # image_tag = '%s-plot' % self.model.name
-        time_data_prep = tac_data_prep - tic_data_prep        # iter_no = self.iter_no
+        tac_data_prep = time.time()  # image_tag = '%s-plot' % self.model.name
+        time_data_prep = tac_data_prep - tic_data_prep  # iter_no = self.iter_no
 
-        writer = self.writer[split]        # def callback(item):
-        image_tag = '%s-plot' % self.model.name        #     real, recon, gen, image_tag, iter_no = item
-        iter_no = self.iter_no        #     writer.add_image(image_tag + '-recon', recon, iter_no)
+        writer = self.writer[split]  # def callback(item):
+        image_tag = '%s-plot' % self.model.name  # real, recon, gen, image_tag, iter_no = item
+        iter_no = self.iter_no  # writer.add_image(image_tag + '-recon', recon, iter_no)
         #     writer.add_image(image_tag + '-gen', gen, iter_no)
-        writer.add_image(image_tag + '-recon', recon, iter_no)        #     writer.add_image(image_tag + '-real', real, iter_no)
+        writer.add_image(image_tag + '-recon', recon, iter_no)  # writer.add_image(image_tag + '-real', real, iter_no)
         writer.add_image(image_tag + '-gen', gen, iter_no)
-        writer.add_image(image_tag + '-real', real, iter_no)        # self.pool.apply_async(log_images, (real, recon, gen, image_tag, iter_no), callback=callback)
-        #
-        self.model.train()        # self.model.train()
+        writer.add_image(image_tag + '-recon', recon, iter_no)
+        writer.add_image(image_tag + '-real', real,iter_no)  # self.pool.apply_async(log_images, (real, recon, gen, image_tag, iter_no), callback=callback)
+
+        self.model.train() # self.model.train()
 
     def train_step_ae(self, x_train, z_train):
         if self.H.train_autoencoder:
@@ -301,7 +301,7 @@ class GanImgTrainer(BaseTrainer):
             self.n_iter_disc += 1
             model.step_train_discriminator(x_train, z_train)
 
-    def save_img(self, test_seed=None):
+    def save_img(self, test_seed=None, split='train'):
         # test_seed = self.fixed_seed if test_seed is None else test_seed
         x = test_seed['x']
         z = test_seed['z']
@@ -309,8 +309,9 @@ class GanImgTrainer(BaseTrainer):
         x_recon = self.model.reconstruct_x(x)
         x_gen = self.model.decode(z)
         # shape:[1,c,h,w]
-        recon_img = save_image(x_recon, self.recon_dir + str(self.iter_no) + '.png')
-        gen_img = save_image(x_gen, self.gen_dir + str(self.iter_no) + '.png')
+
+        recon_img = save_image(x_recon)  # , self.recon_dir + split + '/' + str(self.iter_no) + '.png')
+        gen_img = save_image(x_gen, filename=self.gen_dir + split + '/' + str(self.iter_no) + '.png')
         real = save_image(x)
 
         return recon_img, gen_img, real

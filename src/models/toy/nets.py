@@ -77,7 +77,6 @@ class ToyDisc(BaseModel):
         self.in_feat = in_feat
         self._np_n_batch_logits = n_batch_logits
 
-
         self.n_common_features = 8
         self.n_batch_logits = Parameter(tr.tensor(n_batch_logits), requires_grad=False)
 

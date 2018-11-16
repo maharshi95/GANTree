@@ -49,22 +49,21 @@ class GNodeUtils:
     def split_node(parent, n_child, x_batch, base_id, fixed=False):
         # type: (GNode, int, np.ndarray, int, bool) -> list[GNode]
 
-        logger.info('Starting Split Process: %s' % parent)
-        parent.fit_gmm(x_batch, max_iter=1000)
-        logger.info('Gaussian Mixture Fitted')
-
+        # logger.info('Starting Split Process: %s' % parent)
+        parent.fit_gmm(x_batch, max_iter=10)
         child_nodes = []
 
         # gan_models = GNodeUtils.split_models(parent.gan, n_child, fixed=fixed)
 
         Model = parent.gan.__class__
         n_dim = parent.prior_means.shape[-1]
-
+        # logger.info('n_dim created')
         common_encoder = parent.gan.encoder.copy()
-
+        # logger.info('common_encoder created')
         for i_child in range(n_child):
             node_id = base_id + i_child
             model_name = "node%d" % node_id
+            logger.info('child id:%d'% i_child)
 
             if fixed:
                 means = np.ones(n_dim) * 3.0 * np.power(-1, i_child)
@@ -73,12 +72,17 @@ class GNodeUtils:
                 means = parent.gmm.means_[i_child]
                 cov = parent.gmm.covariances_[i_child]
 
+            # logger.info('alalal')
             child_model = Model(name=model_name,
                                 z_op_params=(tr.Tensor(means), tr.Tensor(cov)),
                                 encoder=common_encoder,
                                 decoder=parent.gan.decoder.copy(),
                                 disc_x=parent.gan.disc_x.copy(),
-                                disc_z=parent.gan.disc_z.copy(), )
+                                disc_z= None,)
+                                # TODO
+                                # disc_z=parent.gan.disc_z.copy(), )
+
+            # logger.info('child created:%d'%i_child)
             # z_bounds=parent.gan.z_bounds)
 
             cond_prob = parent.cluster_probs[i_child]

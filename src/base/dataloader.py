@@ -25,13 +25,13 @@ class BaseDataLoader(object):
     def update_data(self, train_data, test_data, train_labels=None, test_labels=None):
         if self.supervised:
             self.labels = {
-                'train': train_labels,
-                'test': test_labels,
+                'train': train_labels.cuda(),
+                'test': test_labels.cuda(),
             }
 
         self.data = {
-            'train': train_data,
-            'test': test_data
+            'train': train_data.cuda(),
+            'test': test_data.cuda(),
         }
 
         self.n_batches = {

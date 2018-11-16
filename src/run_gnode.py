@@ -20,7 +20,7 @@ from matplotlib import pyplot as plt
 from configs import Config
 from exp_context import ExperimentContext
 
-default_args_str = '-hp base/hyperparams.py -d all -en exp_1_toy_gan -g 1'
+default_args_str = '-hp base/hyperparams.py -d all -en exp_3_toy_gan_node13_from_1 -g 1'
 
 if Config.use_gpu:
     print('mode: GPU')
@@ -221,7 +221,8 @@ def split_dataloader(node):
         )
         dl_set[i] = CustomDataLoader.create_from_parent(dl, data_tuples[:index])
         seed_data[i] = dl_set[i].random_batch('train', 2048)
-    with open('seed_data.pickle', 'w') as fp:
+    seed_data_pkfile = 'seed_data-13.pickle'
+    with open(seed_data_pkfile, 'w') as fp:
         pickle.dump(seed_data, fp)
 
 
@@ -332,7 +333,7 @@ def train_phase_1(node, n_iterations):
             i = iter_no + 1
 
             # Training common encoder over cross-classification loss with a batch across common dataloader
-            x_clf_train_batch, _ = dl_set[node_id].next_batch('train')
+            x_clf_train_batch, _ = dl_set[node.id].next_batch('train')
             z_batch, x_recon, x_recon_loss, x_clf_loss, loss = node.step_train_x_clf(x_clf_train_batch)
 
             node.trainer.writer['train'].add_scalar('x_clf_loss', x_clf_loss, iter_no)
@@ -386,8 +387,8 @@ def train_node(node, x_clf_iters, gan_iters, min_gan_iters, x_clf_lim, x_recon_l
     global future_objects
     child_nodes = tree.split_node(node, fixed=False)
 
-    node.fit_gmm(seed_data[node.id][0], warm_start=False)
-    split_dataloader(node)
+    node.fit_gmm(seed_data[node.id][0])
+    # split_dataloader(node)
     for cnode in child_nodes:
         cnode.set_trainer(dl_set[cnode.id], H, train_config)
 
@@ -438,46 +439,46 @@ def find_next_node():
     return min(leaf_nodes, key=lambda i: likelihoods[i])
 
 
-gan = ToyGAN.create_from_hyperparams('node0', H, '0')
-means = as_np(gan.z_op_params.means)
-cov = as_np(gan.z_op_params.cov)
-dist_params = DistParams(means=means, cov=cov, pi=1.0, prob=1.0)
+# gan = ToyGAN.create_from_hyperparams('node0', H, '0')
+# means = as_np(gan.z_op_params.means)
+# cov = as_np(gan.z_op_params.cov)
+# dist_params = DistParams(means=means, cov=cov, pi=1.0, prob=1.0)
 
-dl = DataLoaderFactory.get_dataloader(H.dataloader, H.input_size, H.z_size, H.batch_size, H.batch_size, supervised=True)
-x_seed, l_seed = dl.random_batch('test', 2048)
-tree = GanTree('gtree', ToyGAN, H, x_seed)
-root = tree.create_child_node(dist_params, gan)
+# dl = DataLoaderFactory.get_dataloader(H.dataloader, H.input_size, H.z_size, H.batch_size, H.batch_size, supervised=True)
+# x_seed, l_seed = dl.random_batch('test', 2048)
+# tree = GanTree('gtree', ToyGAN, H, x_seed)
+# root = tree.create_child_node(dist_params, gan)
 
-root.set_trainer(dl, H, train_config)
+# root.set_trainer(dl, H, train_config)
 
-GNode.load('toy_root.pickle', root)
+'''
+node 0 
+# GNode.load('toy_root.pickle', root)
+
 # logger.info(colored('Training Root Node for GAN Training', 'green', attrs=['bold']))
 # root.train(20000)
 # root.save('toy_root_disc_z.pickle')
 
+# dl_set = {0: dl}
+# 
+# seed_data = {
+#     0: (x_seed, l_seed)
+# }
+# 
+# leaf_nodes = {0}
+# 
+# future_objects = []  # type: list[ApplyResult]
+# pool = Pool(processes=16)
+# bash_utils.create_dir(Paths.weight_dir_path(''), log_flag=False)
 
-dl_set = {0: dl}
-
-seed_data = {
-    0: (x_seed, l_seed)
-}
-
-leaf_nodes = {0}
-
-future_objects = []  # type: list[ApplyResult]
-
-pool = Pool(processes=16)
-
-bash_utils.create_dir(Paths.weight_dir_path(''), log_flag=False)
-
-node_id = find_next_node()
-
-# S+=2
-
-logger.info(colored('Next Node to split: %d' % node_id, 'green', attrs=['bold']))
-node = tree.nodes[node_id]
-train_node(node, x_clf_iters=1000, gan_iters=20000, min_gan_iters=5000, x_clf_lim=0.00001, x_recon_limit=0.004)
-
+# node_id = find_next_node()
+# logger.info(colored('Next Node to split: %d' % node_id, 'green', attrs=['bold']))
+# node = tree.nodes[node_id]
+# train_node(node, x_clf_iters=1000, gan_iters=20000, min_gan_iters=5000, x_clf_lim=0.00001, x_recon_limit=0.004)
+# #
+# leaf_nodes.remove(node_id)
+# leaf_nodes.update(node.child_ids)
+#
 # for i_modes in range(8):
 #     node_id = find_next_node()
 #     logger.info(colored('Next Node to split: %d' % node_id, 'green', attrs=['bold']))
@@ -492,3 +493,48 @@ train_node(node, x_clf_iters=1000, gan_iters=20000, min_gan_iters=5000, x_clf_li
 # root.get_child(1).save('best_child1_phase1.pickle')
 # # print('Iter: %d' % (iter_no + 1))
 # print('Training Complete.')
+
+'''
+
+
+# node 13 from 1
+
+gan = ToyGAN.create_from_hyperparams('node0', H, '0')
+means = as_np(gan.z_op_params.means)
+cov = as_np(gan.z_op_params.cov)
+dist_params = DistParams(means=means, cov=cov, pi=1.0, prob=1.0)
+
+with open('dl_13-1.pickle') as fp:
+    node = pickle.load(fp)
+
+dl = CustomDataLoader( H.input_size, H.z_size, H.batch_size, H.batch_size,supervised=True,get_data=lambda: node)
+with open('./seed_data-1.pickle') as fp:
+    pickle_dict = pickle.load(fp)
+
+seed_data = {0:pickle_dict[1]}
+x_seed, l_seed = seed_data[0] #dl.random_batch('test', 2048)
+tree = GanTree('gtree', ToyGAN, H, x_seed)
+root = tree.create_child_node(dist_params, gan)
+
+root.set_trainer(dl, H, train_config)
+
+
+
+GNode.load('../experiments/exp_3_toy_gan_node1_from_0/weights/node1_full_10000.pt', root)
+
+dl_set = {0: dl}
+
+leaf_nodes = {0}
+
+future_objects = []  # type: list[ApplyResult]
+#
+pool = Pool(processes=16)
+#
+bash_utils.create_dir(Paths.weight_dir_path(''), log_flag=False)
+#
+
+
+node_id = find_next_node()
+logger.info(colored('Next Node to split: %d' % node_id, 'green', attrs=['bold']))
+node = tree.nodes[node_id]
+train_node(node, x_clf_iters=1000, gan_iters=20000, min_gan_iters=5000, x_clf_lim=0.00001, x_recon_limit=0.004)

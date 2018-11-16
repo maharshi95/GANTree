@@ -1,7 +1,7 @@
 import numpy as np
 import torch as tr
 from torch import optim
-
+import logging
 from base.hyperparams import Hyperparams
 from base.model import BaseGan
 from configs import Config
@@ -13,13 +13,15 @@ from modules.commons import ZTransform
 from utils.decorators import make_tensor, tensorify
 
 H = ExperimentContext.Hyperparams  # type: Hyperparams
-
+logger = logging.getLogger(__name__)
 
 class ImgGAN(BaseGan):
 
     def __init__(self, name, z_op_params, z_ip_params=None, encoder=None, decoder=None, disc_x=None, disc_z=None,
                  z_bounds=H.z_bounds):
         super(ImgGAN, self).__init__(name)
+
+        logger.info('model constructor entered')
 
         if isinstance(z_op_params, int):
             z_op_params = tr.zeros(z_op_params), tr.eye(z_op_params)
@@ -56,6 +58,8 @@ class ImgGAN(BaseGan):
             'case2': optim.Adam(self.decoder.parameters()),
 
         }
+        logger.info('model constructor created')
+
 
     @staticmethod
     def create_from_hyperparams(name, hyperparams, cov_sign='+'):
