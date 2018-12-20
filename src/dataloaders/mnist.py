@@ -12,7 +12,7 @@ def normalize_mnist_images(x):
 
 class MnistDataLoader(BaseDataLoader):
 
-    def __init__(self, train_batch_size=32, test_batch_size=32, get_tensor=True, supervised=True):
+    def __init__(self, train_batch_size=64, test_batch_size=64, get_tensor=True, supervised=True):
         super(MnistDataLoader, self).__init__((28, 28), None, train_batch_size, test_batch_size, get_tensor,
                                               supervised=True)
 

@@ -22,7 +22,7 @@ def scatter_2d(ax, data, s=0.5, c=None, marker=None, linewidths=None, *args, **k
     return ax.scatter(data[:, 0], data[:, 1], s=s, c=c, marker=None, linewidths=linewidths, *args, **kwargs)
 
 
-def plot_ellipse(ax, means, cov, scales=3.0, color='red'):
+def plot_ellipse(ax, means, cov, threshold, scales=3.0, color='red'):
     e = get_ellipse(means, cov, scales, color=color)
     return ax.add_artist(e)
 
@@ -191,53 +191,150 @@ def get_x_clf_figure(plot_data, n_modes=9):
         x_fake0,
         z_rand1,
         x_fake1,
+    ], [
+        child_0_mean,
+        child_1_mean,
+        child_0_cov,
+        child_1_cov
+    ], [prob_ch0,
+        prob_ch1
+    ], threshold] = plot_data
 
-    ]] = plot_data
-    b = 9
-    colors = get_random_colors(n_modes)
-    colors = colors[labels]
+    b = 18
+    color = ['r', 'b', 'g']
+    colors = [color[x] for x in labels]
 
-    fig = plt.figure(figsize=(12, 12))
+    fig = plt.figure(figsize=(6.5, 6.5))
 
-    #
-    # ax = fig.add_subplot(331)
-    # ax.set_xlim(-b, b)
-    # ax.set_ylim(-b, b)
-    # scatter_2d(ax, x_batch, c=colors)
+    # #
+    # # ax = fig.add_subplot(331)
+    # # ax.set_xlim(-b, b)
+    # # ax.set_ylim(-b, b)
+    # # scatter_2d(ax, x_batch, c=colors)
 
-    # ax = fig.add_subplot(332)
-    # ax.set_xlim(-b, b)
-    # ax.set_ylim(-b, b)
-    # scatter_2d(ax, x_recon_post, c=colors)
+    # # ax = fig.add_subplot(332)
+    # # ax.set_xlim(-b, b)
+    # # ax.set_ylim(-b, b)
+    # # scatter_2d(ax, x_recon_post, c=colors)
 
-    ax = fig.add_subplot(333)
+    ax = fig.add_subplot(111)
     ax.set_xlim(-b, b)
     ax.set_ylim(-b, b)
     scatter_2d(ax, z_batch_post, c=colors)
-    plot_ellipse(ax, ch0_means[:2], ch0_cov[0:2,0:2], color='red')
-    plot_ellipse(ax, ch1_means[:2], ch1_cov[0:2,0:2], color='blue')
+    # plot_ellipse(ax, ch0_means[:2].reshape(-1,1), ch0_cov[0:2,0:2], color='red')
+    # plot_ellipse(ax, ch1_means[:2].reshape(-1,1), ch1_cov[0:2,0:2], color='blue')
+    # plot_ellipse(ax, child_0_mean, ch0_cov[0:2,0:2], color='red')
+    # plot_ellipse(ax, child_1_mean, ch1_cov[0:2,0:2], color='blue')
+    center, theta, width, height = np_utils.ellipse_params(child_0_mean, child_0_cov, nsig = threshold)
+    e_ch0 = Ellipse(center, width, height, theta, alpha=0.25, color='red')
+
+    center, theta, width, height = np_utils.ellipse_params(child_1_mean, child_1_cov, nsig = threshold)
+    e_ch1 = Ellipse(center, width, height, theta, alpha = 0.25, color='blue')
+
+    ax.add_artist(e_ch0)
+    ax.add_artist(e_ch1)
+
+    # plt.scatter(z_batch_post[:, 0], z_batch_post[:, 1], s = 3.0, c=colors, marker=None, linewidths=None)
+    # plt.add_patch(get_ellipse(ch0_means[:2].reshape(-1,1), ch0_cov[0:2,0:2], scales = 3.0, color='red'))
+    # plt.add_patch(get_ellipse(ch1_means[:2].reshape(-1,1), ch1_cov[0:2,0:2], scales = 3.0, color='blue'))
+
+    # fig = plt.gcf()
+
+    fig1 = plt.figure(figsize=(5, 4))
+
+
+    # ax = fig1.add_subplot(111)
+    # ax.set_xlim(-1, 11)
+    # ax.set_ylim(-0.1, 1.3)
+    # barWidth = 0.25
+    # bars1 = [confidence_cluster0[i][0] for i in range(10)]
+    # bars2 = [confidence_cluster1[i][0] for i in range(10)]
+
+    # yer1 = [confidence_cluster0[i][1] for i in range(10)]
+    # yer2 = [confidence_cluster1[i][1] for i in range(10)]
+
+    # print(bars1)
+    # print(bars2)
+    # print(yer1)
+    # print(yer2)
+
+
+    # r1 = np.arange(len(bars1))
+    # r2 = [x+barWidth for x in r1]
+
+    # ax.bar(r1, bars1, width = barWidth, color = 'red', edgecolor = 'black', yerr=yer1, capsize=7, label='poacee')
+ 
+    # ax.bar(r2, bars2, width = barWidth, color = 'blue', edgecolor = 'black', yerr=yer2, capsize=7, label='sorgho')
+ 
+    # # general layout
+    # ax.set_xticks([r + barWidth for r in range(len(bars1))], ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
+    # ax.set_ylabel('probability')
+
+    ax = fig1.add_subplot(111)
+    ax.set_xlim(-1, 10)
+    ax.set_ylim(-0.01, 1.1)
+    barWidth = 0.30
+    bars1 = [prob_ch0[i] for i in range(10)]
+    bars2 = [prob_ch1[i] for i in range(10)]
+
+    print(bars1)
+    print(bars2)
+
+    r1 = np.arange(len(bars1))
+    r2 = [x+barWidth for x in r1]
+
+    ax.bar(r1, bars1, width = barWidth, color = 'red', edgecolor = 'black', capsize=7)
+ 
+    ax.bar(r2, bars2, width = barWidth, color = 'blue', edgecolor = 'black', capsize=7)
+ 
+    # general layout
+    ax.set_xticks([r + barWidth for r in range(len(bars1))], ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
+    ax.set_ylabel('accuracy')
+
+    # barWidth = 0.3
+    # bars1 = [prob_ch0[i] for i in range(10)]
+    # bars2 = [prob_ch1[i] for i in range(10)]
+
+    # print(bars1)
+    # print(bars2)
+
+    # r1 = np.arange(len(bars1))
+    # r2 = [x+barWidth for x in r1]
+
+    # plt.bar(r1, bars1, width = barWidth, color = 'red', edgecolor = 'black', capsize=7)
+ 
+    # plt.bar(r2, bars2, width = barWidth, color = 'blue', edgecolor = 'black', capsize=7)
+ 
+    # # general layout
+    # plt.xticks([r + barWidth for r in range(len(bars1))], ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
+    # plt.ylabel('accuracy')
+
+    # fig1 = plt.gcf()
+
+    # plt.legend()
+
 
     # ax = fig.add_subplot(334)
     # ax.set_xlim(-b, b)
     # ax.set_ylim(-b, b)
-    # scatter_2d(ax, x_batch)
+    # ax.plot(child_1_mean[0], child_1_mean[1], 'bo', child_0_mean[0], child_1_mean[0], 'ro')
 
     # ax = fig.add_subplot(335)
     # ax.set_xlim(-b, b)
     # ax.set_ylim(-b, b)
     # scatter_2d(ax, x_recon_pre, c=colors)
 
-    ax = fig.add_subplot(336)
-    ax.set_xlim(-b, b)
-    ax.set_ylim(-b, b)
-    scatter_2d(ax, z_batch_pre, c=colors)
-    plot_ellipse(ax, root_means[:2], root_cov[0:2,0:2], color='red')
+    # ax = fig.add_subplot(336)
+    # ax.set_xlim(-b, b)
+    # ax.set_ylim(-b, b)
+    # scatter_2d(ax, z_batch_pre, c=colors)
+    # plot_ellipse(ax, root_means[:2], root_cov[0:2,0:2], color='red')
 
-    ax = fig.add_subplot(337)
-    ax.set_xlim(-b, b)
-    ax.set_ylim(-b, b)
-    scatter_2d(ax, z_rand0, c='red')
-    scatter_2d(ax, z_rand1, c='blue')
+    # ax = fig.add_subplot(337)
+    # ax.set_xlim(-b, b)
+    # ax.set_ylim(-b, b)
+    # scatter_2d(ax, z_rand0, c='red')
+    # scatter_2d(ax, z_rand1, c='blue')
 
     # ax = fig.add_subplot(338)
     # ax.set_xlim(-b, b)
@@ -245,4 +342,4 @@ def get_x_clf_figure(plot_data, n_modes=9):
     # scatter_2d(ax, x_fake0, c='red')
     # scatter_2d(ax, x_fake1, c='blue')
 
-    return fig
+    return fig, fig1

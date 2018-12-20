@@ -1,5 +1,7 @@
 from __future__ import print_function, division
 import os, argparse, logging, json
+import traceback
+
 from termcolor import colored
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
@@ -15,7 +17,7 @@ import torch as tr
 from matplotlib import pyplot as plt
 from configs import Config
 
-default_args_str = '-hp hyperparams/digit_mnist.py -en mnist_start -t'
+default_args_str = '-hp hyperparams/digit_mnist_64.py -en mnist_mode_split -t'
 
 if Config.use_gpu:
     print('mode: GPU')
@@ -119,7 +121,7 @@ train_config = TrainConfig(
     n_step_console_log=-1,
     n_step_validation=100,
     n_step_save_params=2000,
-    n_step_visualize=300
+    n_step_visualize=1000
 )
 
 
@@ -226,8 +228,8 @@ def relabel_samples(node):
 def split_dataloader(node):
     dl = dl_set[node.id]
 
-    train_splits, train_split_index = node.split_x(dl.data['train'], Z_flag=True)
-    test_splits, test_split_index = node.split_x(dl.data['test'], Z_flag=True)
+    train_splits, train_split_index = node.split_x(dl.data['train'].cuda(), Z_flag=True)
+    test_splits, test_split_index = node.split_x(dl.data['test'].cuda(), Z_flag=True)
 
     index = 4 if dl.supervised else 2
 
@@ -241,6 +243,12 @@ def split_dataloader(node):
             train_labels,
             test_labels
         )
+
+        print(train_splits[i].shape)
+        print(test_splits[i].shape)
+        print(train_labels.shape)
+        print(test_labels.shape)
+
         dl_set[i] = CustomDataLoader.create_from_parent(dl, data_tuples[:index])
         # seed_data[i] = dl_set[i].random_batch('train', 64)
     # seed_data_pkfile = 'seed_data-13.pickle'
@@ -253,10 +261,10 @@ def split_dataloader(node):
 
 def get_x_clf_plot_data(root, x_batch):
     with tr.no_grad():
-        z_batch_post = root.post_gmm_encode(x_batch)
-        x_recon_post, _ = root.post_gmm_decode(z_batch_post)
+        z_batch_post = tr.from_numpy(root.post_gmm_encode(x_batch)).cuda()
+        x_recon_post, _ = root.post_gmm_decode(z_batch_post, train = False)
 
-        z_batch_pre = root.pre_gmm_encode(x_batch)
+        z_batch_pre = tr.from_numpy(root.pre_gmm_encode(x_batch)).cuda()
         x_recon_pre = root.pre_gmm_decode(z_batch_pre)
 
         z_batch_post = as_np(z_batch_post)
@@ -273,10 +281,12 @@ def get_deep_type(obj):
         return [get_deep_type(o) for o in obj]
     return str(type(obj))
 
+from sklearn.decomposition import PCA
 
-def get_plot_data(iter_no, node, x_batch, labels):
+def get_plot_data(iter_no, node, x_batch, labels, pca2rand = None, pca = False):
     # type: (int, GNode, np.ndarray, np.ndarray) -> list
     z_batch_pre, z_batch_post, x_recon_pre, x_recon_post = get_x_clf_plot_data(node, x_batch)
+    pred_post = node.gmm_predict(as_np(z_batch_post))
 
     z_rand0 = node.get_child(0).sample_z_batch(x_batch.shape[0])
     z_rand1 = node.get_child(1).sample_z_batch(x_batch.shape[0])
@@ -284,28 +294,54 @@ def get_plot_data(iter_no, node, x_batch, labels):
         x_fake0 = node.post_gmm_decoders[0].forward(z_rand0)
         x_fake1 = node.post_gmm_decoders[1].forward(z_rand1)
 
+    if pca:
+        # pca2 = PCA(n_components = 2)
+        if pca2rand == None:
+            # print("None")
+            pca2rand = PCA(n_components = 2)
+            # print("Same")
+
+        # pca2.fit(np.append(z_batch_pre, z_batch_post, axis = 0))
+        pca2rand.fit(np.append(z_rand1, z_rand0, axis = 0))
+        z_batch_pre_red = pca2rand.transform(z_batch_pre)
+        z_batch_post_red = pca2rand.transform(z_batch_post)
+        z_rand0_red = pca2rand.transform(z_rand0)
+        z_rand1_red = pca2rand.transform(z_rand1)
+        child_0_mean = pca2rand.transform(node.get_child(0).prior_means.reshape(1, -1))[0]
+        child_1_mean = pca2rand.transform(node.get_child(1).prior_means.reshape(1, -1))[0]
+    else:
+        z_batch_pre_red = z_batch_pre[:, 0:2]
+        z_batch_post_red = z_batch_post[:, 0:2]
+        z_rand0_red = z_rand0[:, 0:2]
+        z_rand1_red = z_rand1[:, 0:2] 
+        child_0_mean = node.get_child(0).prior_means[0:2]
+        child_1_mean = node.get_child(1).prior_means[0:2]
+
     plot_data = [
         [
             [
                 as_np(x_batch),
-                as_np(labels).astype(int)
+                as_np(pred_post).astype(int)
             ],
             as_np(node.dist_params),
             node.get_child(0).dist_params,
             node.get_child(1).dist_params
         ], [
-            z_batch_pre[:, 0:2],
-            z_batch_post[:, 0:2],
+            z_batch_pre_red,
+            z_batch_post_red,
             x_recon_pre,
             x_recon_post
         ], [
-            as_np(z_rand0[:, 0:2]),
+            as_np(z_rand0_red),
             as_np(x_fake0),
-            as_np(z_rand1[:, 0:2]),
+            as_np(z_rand1_red),
             as_np(x_fake1),
+        ], [
+            as_np(child_0_mean),
+            as_np(child_1_mean)
         ]
     ]
-    return plot_data
+    return plot_data, pca2rand
 
 
 def generate_plots(plot_data, iter_no, tag):
@@ -316,11 +352,34 @@ def generate_plots(plot_data, iter_no, tag):
     return (iter_no, path)
 
 
-def visualize_plots(iter_no, node, x_batch, labels, tag):
-    plot_data = get_plot_data(iter_no, node, x_batch, labels)
+def visualize_plots(iter_no, node, x_batch, labels, tag, pca2rand = None):
+    plot_data, pca2rand = get_plot_data(iter_no, node, x_batch, labels, pca2rand = pca2rand, pca = True)
     future = pool.apply_async(generate_plots, (plot_data, iter_no, tag))
     future_objects.append(future)
-    return future
+    return future, pca2rand
+
+
+def save_node(node, tag=None, iter=None):
+    # type: (GNode, str, int) -> None
+    filename = node.name
+    if tag is not None:
+        filename += '_' + str(tag)
+    if iter is not None:
+        filename += ('_%05d' % iter)
+    filename = filename + '.pt'
+    filepath = os.path.join(Paths.weight_dir_path(''), filename)
+    node.save(filepath)
+
+
+def load_node(node_name, tag=None, iter=None):
+    filename = node_name
+    if tag is not None:
+        filename += '_' + str(tag)
+    if iter is not None:
+        filename += ('_%05d' % iter)
+    filepath = os.path.join(Paths.weight_dir_path(''), filename)
+    gnode = GNode.load(filepath, Model=ImgGAN)
+    return gnode
 
 
 # batch_size multiple of 256
@@ -331,43 +390,205 @@ def get_z(node, batch_size):
 
     for i in range(iter):
         x = dl.random_batch(split='train', batch_size=256)[0]
-        z = node.post_gmm_encode(x)
+        z = tr.from_numpy(node.post_gmm_encode(x)).cuda()
         Z = tr.cat((Z, z), 0)
         # print('gmm iter',iter)
     return Z
 
+def get_data(node, split):
+    Z = tr.tensor([])
 
-def train_phase_1(node, n_iterations):
+    if split == 'train':
+        data = dl.train_data()
+
+    # print(len(data))
+
+    iter = (len(data) // 256) + 1
+
+    for i in range(iter):
+        if i < iter -1:
+            x = data[i*256:(i+1)*256]
+        else:
+            x = data[i*256:]
+        z = tr.from_numpy(node.post_gmm_encode(x)).cuda()
+        Z = tr.cat((Z,z), 0)
+
+
+    # print(len(Z))
+    return Z
+
+# epoch-wise
+
+def train_phase_1(node, epochs):
     # print('entered phase 1')
-    Z = get_z(node=node, batch_size=2048)
-    # print('train phase 1: got Z')
-    node.fit_gmm(x_seed, Z=Z, max_iter=10)
 
-    visualize_plots(iter_no=0, node=node, x_batch=x_seed, labels=l_seed, tag='x_clf_plots')
+    train_data = dl_set[0].train_data()
 
-    with tqdm(total=n_iterations) as pbar:
-        for iter_no in range(n_iterations):
-            node.trainer.iter_no = iter_no
 
-            i = iter_no + 1
+    for j in range(epochs):
+        print("epoch number: " + str(j))
+        Z = get_data(node = node, split = 'train')
+        batchSize = dl_set[0].batch_size['train']
+        if len(Z) % batchSize == 0:
+            n_iterations = (len(Z) // batchSize) 
+        else:
+            n_iterations = (len(Z) // batchSize) + 1
 
-            # Training common encoder over cross-classification loss with a batch across common dataloader
-            x_clf_train_batch, _ = dl_set[0].next_batch('train')
-            z_batch, x_recon, x_recon_loss, x_clf_loss, loss,loss_c1,loss_c2 = node.step_train_x_clf(x_clf_train_batch)
+        # print(batchSize)
+        # print(n_iterations)
 
-            node.trainer.writer['train'].add_scalar('x_clf_loss', x_clf_loss, iter_no)
-            node.trainer.writer['train'].add_scalar('x_recon_loss', x_recon_loss, iter_no)
-            node.trainer.writer['train'].add_scalar('loss', loss, iter_no)
-            node.trainer.writer['train'].add_scalar('loss_from_cov1', loss,loss_c1, iter_no)
-            node.trainer.writer['train'].add_scalar('loss_deom_cov2', loss_c2, iter_no)
 
-            Z = get_z(node=node, batch_size=2048)
+        _, pca2rand = visualize_plots(iter_no=0, node=node, x_batch=x_seed, labels=l_seed, tag='x_clf_plots')
 
-            node.fit_gmm(x_seed, Z=Z, max_iter=5)
+        # simcrossdist = node.update_child_params(x_seed, Z= Z.cpu().numpy(), max_iter=5)
+        
+        # node.trainer.writer['train'].add_scalar('simcrossdist', simcrossdist, j * n_iterations)
+        # mean_time_taken = 1.0
 
-            if i < 10 or i % 10 == 0:
-                visualize_plots(iter_no=i, node=node, x_batch=x_seed, labels=l_seed, tag='x_clf_plots')
-            pbar.update(n=1)
+
+        with tqdm(total=n_iterations) as pbar:
+            for iter_no in range(n_iterations):
+                tic = time.time()
+                current_iter_no = j * n_iterations + iter_no
+                node.trainer.iter_no = current_iter_no
+
+                if current_iter_no % 20 == 0:
+                    simcrossdist = node.update_child_params(x_seed, Z= Z.cpu().numpy(), max_iter=5)
+            
+                    node.trainer.writer['train'].add_scalar('simcrossdist', simcrossdist, j * n_iterations)
+
+                # Training common encoder over cross-classification loss with a batch across common dataloader
+
+                if (iter_no < (n_iterations - 1)):
+                    # print("in")
+                    start_no = iter_no * batchSize
+                    end_no = start_no + batchSize
+                    x_clf_train_batch = train_data[start_no:end_no]
+                else:
+                    # print("out")
+                    start_no = iter_no * batchSize
+                    end_no = len(train_data)
+                    x_clf_train_batch = train_data[start_no:end_no]
+
+                # print(x_clf_train_batch.shape)
+                z_batch, x_recon, x_recon_loss, x_clf_loss, loss, preds, time_taken, mu_hinge_loss, x_clf_cross_loss = node.step_train_x_clf(x_clf_train_batch, start_no, end_no, w1 = 1.0, w2 = 1.0, w3 = 10.0, w4 = 100.0)
+
+                # mean_time_taken = 0.8 * mean_time_taken + 0.2 * time_taken
+
+                positive = np.sum(preds == 0.)
+                negative = np.sum(preds == 1.)
+
+                ratio = positive * 1.0 / (positive + negative)
+
+                if current_iter_no % 10 == 0:
+                    node.trainer.writer['train'].add_scalar('x_clf_loss', x_clf_loss, current_iter_no)
+                    node.trainer.writer['train'].add_scalar('x_recon_loss', x_recon_loss, current_iter_no)
+                    node.trainer.writer['train'].add_scalar('loss', loss, current_iter_no)
+                    node.trainer.writer['train'].add_scalar('split_ratio', ratio, current_iter_no)
+                    node.trainer.writer['train'].add_scalar('mu_hinge_loss', mu_hinge_loss, current_iter_no)
+                    node.trainer.writer['train'].add_scalar('x_clf_cross_loss', x_clf_cross_loss, current_iter_no)
+
+                child0mean = node.get_child(0).prior_means
+                child1mean = node.get_child(1).prior_means
+                meanDistance = np.linalg.norm(child0mean - child1mean)
+
+                node.trainer.writer['train'].add_scalar('meanDistance', meanDistance, current_iter_no)                    
+
+
+                # markerline0, stemlines0, baseline0 = plt.stem(child0mean[4:6])
+                # plt.setp(stemlines0, color='r', linewidth=2)
+                # plt.setp(markerline0, color='r')
+                # markerline1, stemlines1, baseline1 = plt.stem(child1mean[4:6])
+                # plt.setp(stemlines1, color='b', linewidth=2)
+                # plt.setp(markerline1, color='b')
+                # node.trainer.writer['train'].add_figure('means', plt.gcf(), current_iter_no)
+                # plt.savefig('../experiments/gnode_mnist_plots/mean'+str(current_iter_no)+'.png')
+
+
+                pbar.update(n=1)
+
+                # tac = time.time()
+                # time_taken = tac - tic
+                # mean_time_taken = 0.8 * mean_time_taken + 0.2 * time_taken
+                # if i % 100 == 0:
+                #     print(mean_time_taken)
+
+                if current_iter_no < 10 or current_iter_no % 100 == 0:
+                    visualize_plots(iter_no=current_iter_no, node=node, x_batch=x_seed, labels=l_seed, tag='x_clf_plots', pca2rand = pca2rand)
+
+
+
+# def train_phase_1(node, n_iterations):
+#     # print('entered phase 1')
+#     Z = get_z(node=node, batch_size=2048)
+#     # print('train phase 1: got Z')
+#     # node.fit_gmm(x_seed, Z=Z, max_iter=10)
+
+#     _, pca2rand = visualize_plots(iter_no=0, node=node, x_batch=x_seed, labels=l_seed, tag='x_clf_plots')
+
+#     mean_time_taken = 1.0
+
+#     with tqdm(total=n_iterations) as pbar:
+#         for iter_no in range(n_iterations):
+#             tic = time.time()
+#             node.trainer.iter_no = iter_no
+
+#             i = iter_no + 1
+
+#             # Training common encoder over cross-classification loss with a batch across common dataloader
+#             x_clf_train_batch, _ = dl_set[0].next_batch('train')
+#             z_batch, x_recon, x_recon_loss, x_clf_loss, loss, preds, time_taken = node.step_train_x_clf(x_clf_train_batch)
+#             # mean_time_taken = 0.8 * mean_time_taken + 0.2 * time_taken
+
+#             positive = np.sum(preds == 0.)
+#             negative = np.sum(preds == 1.)
+
+#             ratio = positive * 1.0 / (positive + negative)
+
+#             if i % 10 == 0:
+#                 node.trainer.writer['train'].add_scalar('x_clf_loss', x_clf_loss, iter_no)
+#                 node.trainer.writer['train'].add_scalar('x_recon_loss', x_recon_loss, iter_no)
+#                 node.trainer.writer['train'].add_scalar('loss', loss, iter_no)
+#                 node.trainer.writer['train'].add_scalar('split_ratio', ratio, iter_no)
+
+#             child0mean = node.get_child(0).prior_means
+#             child1mean = node.get_child(1).prior_means
+#             meanDistance = np.linalg.norm(child0mean - child1mean)
+
+#             node.trainer.writer['train'].add_scalar('meanDistance', meanDistance, iter_no)
+
+#             if iter_no % 10 == 0:
+#                 print(meanDistance)
+
+#             if meanDistance < 15.0:
+#                 if iter_no % 10 == 0:
+#                     Z = get_z(node=node, batch_size=2048)
+#                     simcrossdist = node.update_child_params(x_seed, Z= Z.cpu().numpy(), max_iter=5)
+#                     node.trainer.writer['train'].add_scalar('simcrossdist', simcrossdist, iter_no)
+
+                
+
+#             # markerline0, stemlines0, baseline0 = plt.stem(child0mean[4:6])
+#             # plt.setp(stemlines0, color='r', linewidth=2)
+#             # plt.setp(markerline0, color='r')
+#             # markerline1, stemlines1, baseline1 = plt.stem(child1mean[4:6])
+#             # plt.setp(stemlines1, color='b', linewidth=2)
+#             # plt.setp(markerline1, color='b')
+#             # node.trainer.writer['train'].add_figure('means', plt.gcf(), iter_no)
+#             # plt.savefig('../experiments/gnode_mnist_plots/mean'+str(iter_no)+'.png')
+
+
+#             pbar.update(n=1)
+
+#             # tac = time.time()
+#             # time_taken = tac - tic
+#             # mean_time_taken = 0.8 * mean_time_taken + 0.2 * time_taken
+#             # if i % 100 == 0:
+#             #     print(mean_time_taken)
+
+#             if i < 10 or i % 10 == 0:
+#                 visualize_plots(iter_no=i, node=node, x_batch=x_seed, labels=l_seed, tag='x_clf_plots', pca2rand = pca2rand)
+
 
 
 def is_gan_vis_iter(i):
@@ -393,7 +614,8 @@ def train_node(node, x_clf_iters=200, gan_iters=10000):
     # type: (GNode, int, int) -> None
     global future_objects
 
-    child_nodes = tree.split_node(node, fixed=False)
+    child_nodes = tree.split_node(node, x_batch = dl_set[0].train_data(), fixed=False)
+    # get_recons_data(root, x_seed, l_seed)
 
     train_phase_1(node, x_clf_iters)
 
@@ -404,10 +626,10 @@ def train_node(node, x_clf_iters=200, gan_iters=10000):
     nodes[1].set_trainer(dl_set[1], H, train_config, Model=GanImgTrainer)
     nodes[2].set_trainer(dl_set[2], H, train_config, Model=GanImgTrainer)
 
-    future_objects = []  # type: list[ApplyResult]
+    # future_objects = []  # type: list[ApplyResult]
 
-    train_phase_2(node, gan_iters)
-    # Logging the image savingh operations status
+    # train_phase_2(node, gan_iters)
+    # Logging the image saving operations status
     for i, obj in enumerate(future_objects):
         iter_no, path = obj.get()
         if obj.successful():
@@ -419,9 +641,9 @@ def train_node(node, x_clf_iters=200, gan_iters=10000):
 def likelihood(node, dl):
     samples = dl.data['train'].shape[0]
     # print('count of samples',samples)
-    X_complete = dl.data['train']
+    X_complete = dl.data['train'].cuda()
     iter = samples // 256
-    p = np.zeros([iter],dtype=np.float32)
+    p = np.zeros([iter], dtype=np.float32)
 
     for idx in range(iter):
         p[idx] = node.mean_likelihood(X_complete[(idx) * 256:(idx + 1) * 256])
@@ -442,6 +664,25 @@ def find_next_node():
             return max(leaf_nodes, key=lambda i: n_samples[i])
     return min(leaf_nodes, key=lambda i: likelihoods[i])
 
+def get_recons_data(node, x_batch, l_seed):
+    # type: (int, GNode, np.ndarray, np.ndarray) -> list
+    z_batch_pre, z_batch_post, x_recon_pre, x_recon_post = get_x_clf_plot_data(node, x_batch)
+    pred_post = node.gmm_predict(as_np(z_batch_post))
+
+    print(x_recon_post.shape)
+
+    x_recon_post_child0 = x_recon_post[np.where(pred_post == 0)]
+    l_seed_ch0 = l_seed[np.where(pred_post == 0)]
+    print(x_recon_post_child0.shape)
+    print(l_seed_ch0.shape)
+
+    x_recon_post_child1 = x_recon_post[np.where(pred_post == 1)]
+    l_seed_ch1 = l_seed[np.where(pred_post == 1)]
+    print(l_seed_ch1.shape)
+    print(x_recon_post_child1.shape)
+
+    np.savez('x_recon_post_child0', recon_ch0 = x_recon_post_child0, l_seed_ch0 = l_seed_ch0)
+    np.savez('x_recon_post_child1', recon_ch1 = x_recon_post_child1, l_seed_ch1 = l_seed_ch1)
 
 #  node 0
 
@@ -459,46 +700,42 @@ root = tree.create_child_node(dist_params, gan)
 
 root.set_trainer(dl, H, train_config, Model=GanImgTrainer)
 
-GNode.load('./best_node-10.pt', root)
-
-node_id = find_next_node()
-
-logger.info(colored('Next Node to split: %d' % node_id, 'green', attrs=['bold']))
-node = tree.nodes[node_id]
-train_node(node, x_clf_iters=1500, gan_iters=20000)  # , min_gan_iters=5000, x_clf_lim=0.00001, x_recon_limit=0.004)
-
-# node.post_gmm_encode
+GNode.load('../experiments/mxp_1_trial/best_node-10.pt', root)
 # GNode.load('best_node.pickle', root)
 # for i in range(20):
 #     root.train(5000)
 #     root.save('../experiments/' + exp_name + '/best_node-' + str(i) + '.pt')
 
-# dl_set = {0: dl}
-# leaf_nodes = {0}
-# future_objects = []  # type: list[ApplyResult]
+dl_set = {0: dl}
+leaf_nodes = {0}
+future_objects = []  # type: list[ApplyResult]
 #
-# bash_utils.create_dir(Paths.weight_dir_path(''), log_flag=False)
-# pool = Pool(processes=16)
-# node_id = find_next_node()
+bash_utils.create_dir(Paths.weight_dir_path(''), log_flag=False)
+pool = Pool(processes=16)
+node_id = find_next_node()
 
+try:
+    logger.info(colored('Next Node to split: %d' % node_id, 'green', attrs=['bold']))
+    root = tree.nodes[node_id]
+    # train_node(root, x_clf_iters=1500, gan_iters=20000)  # , min_gan_iters=5000, x_clf_lim=0.00001, x_recon_limit=0.004)
+    train_node(root, x_clf_iters=8, gan_iters=20000)  # , min_gan_iters=5000, x_clf_lim=0.00001, x_recon_limit=0.004)
 
-# logger.info(colored('Next Node to split: %d' % node_id, 'green', attrs=['bold']))
-# node = tree.nodes[node_id]
-# train_node(node, x_clf_iters=1500, gan_iters=20000)  # , min_gan_iters=5000, x_clf_lim=0.00001, x_recon_limit=0.004)
+except Exception as e:
+    pool.close()
+    traceback.print_exc()
+    raise Exception(e)
 
 # # GNode.load('best_node.pickle', root)
-# for i in range(20):
-#     root.train(5000)
-#     root.save('../experiments/' + exp_name + '/best_node-' + str(i) + '.pt')
+# # for i in range(20):
+# #     root.train(5000)
+# #     root.save('../experiments/' + exp_name + '/best_node-' + str(i) + '.pt')
 
-# dl_set = {0: dl}
-#
-# future_objects = []  # type: list[ApplyResult]
-#
-# pool = Pool(processes=16)
-#
-# root.save('best_root_phase1.pickle')
-# root.get_child(0).save('best_child0_phase1.pickle')
-# root.get_child(1).save('best_child1_phase1.pickle')
-# # print('Iter: %d' % (iter_no + 1))
-# print('Training Complete.')
+# root.save('best_root_phase1_mnistdc.pickle')
+# root.get_child(0).save('best_child0_phase1_mnistdc.pickle')
+# root.get_child(1).save('best_child1_phase1_mnistdc.pickle')
+# # # print('Iter: %d' % (iter_no + 1))
+# # print('Training Complete.')
+
+# GNode.load('best_root_phase1_mnistdc.pickle', root)
+
+get_recons_data(root, x_seed, l_seed)

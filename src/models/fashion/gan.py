@@ -15,6 +15,7 @@ from utils.decorators import make_tensor, tensorify
 H = ExperimentContext.Hyperparams  # type: Hyperparams
 logger = logging.getLogger(__name__)
 
+
 class ImgGAN(BaseGan):
 
     def __init__(self, name, z_op_params, z_ip_params=None, encoder=None, decoder=None, disc_x=None, disc_z=None,
@@ -59,7 +60,6 @@ class ImgGAN(BaseGan):
 
         }
         logger.info('model constructor created')
-
 
     @staticmethod
     def create_from_hyperparams(name, hyperparams, cov_sign='+'):
@@ -129,12 +129,16 @@ class ImgGAN(BaseGan):
             return gen_x_accuracy, disc_x_accuracy
 
     def discriminative_x_entropy_loss(self, s_logits_real, s_logits_fake, b_logits_real, b_logits_fake):
-        s_loss_real = losses.sigmoid_cross_entropy_loss(s_logits_real, 1.0)
-        s_loss_fake = losses.sigmoid_cross_entropy_loss(s_logits_fake, 0.0)
+        # s_loss_real = losses.sigmoid_cross_entropy_loss(s_logits_real, 1.0)
+        # s_loss_fake = losses.sigmoid_cross_entropy_loss(s_logits_fake, 0.0)
+        s_loss_real = losses.ls_gan_loss(s_logits_real, 10.0)
+        s_loss_fake = losses.ls_gan_loss(s_logits_fake, -10.0)
         s_x_entropy_loss = (s_loss_real + s_loss_fake) / 2.0
 
-        b_loss_real = losses.sigmoid_cross_entropy_loss(b_logits_real, 1.0)
-        b_loss_fake = losses.sigmoid_cross_entropy_loss(b_logits_fake, 0.0)
+        # b_loss_real = losses.sigmoid_cross_entropy_loss(b_logits_real, 1.0)
+        # b_loss_fake = losses.sigmoid_cross_entropy_loss(b_logits_fake, 0.0)
+        b_loss_real = losses.ls_gan_loss(b_logits_real, 10.0)
+        b_loss_fake = losses.ls_gan_loss(b_logits_fake, -10.0)
         b_x_entropy_loss = (b_loss_real + b_loss_fake) / 2.0
 
         loss = s_x_entropy_loss  # + batch_x_entropy_loss
@@ -144,8 +148,10 @@ class ImgGAN(BaseGan):
         return loss
 
     def generative_x_entropy_loss(self, sample_logits, batch_logits):
-        sample_loss = losses.sigmoid_cross_entropy_loss(sample_logits, 1.0)
-        batch_loss = losses.sigmoid_cross_entropy_loss(batch_logits, 1.0)
+        # sample_loss = losses.sigmoid_cross_entropy_loss(sample_logits, 1.0)
+        # batch_loss = losses.sigmoid_cross_entropy_loss(batch_logits, 1.0)
+        sample_loss = losses.ls_gan_loss(sample_logits, 10.0)
+        batch_loss = losses.ls_gan_loss(batch_logits, 10.0)
 
         loss = sample_loss  # + batch_loss
         if H.train_batch_logits:

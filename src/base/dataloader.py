@@ -1,4 +1,5 @@
 import numpy as np
+import torch as tr
 from utils import np_utils
 from utils.decorators import tensor_output
 
@@ -7,7 +8,7 @@ from configs import Config
 
 class BaseDataLoader(object):
 
-    def __init__(self, input_size=2, latent_size=2, train_batch_size=32, test_batch_size=32, get_tensor=True, supervised=False):
+    def __init__(self, input_size=2, latent_size=2, train_batch_size=64, test_batch_size=64, get_tensor=True, supervised=False):
         self.input_size = input_size
         self.latent_size = latent_size
         self.get_tensor = True
@@ -23,15 +24,17 @@ class BaseDataLoader(object):
         self.update_data(*all_data)
 
     def update_data(self, train_data, test_data, train_labels=None, test_labels=None):
+
+        #TODO: Modify to make this generic for non cuda devices
         if self.supervised:
             self.labels = {
-                'train': train_labels.cuda(),
-                'test': test_labels.cuda(),
+                'train': tr.tensor(train_labels),
+                'test': tr.tensor(test_labels),
             }
 
         self.data = {
-            'train': train_data.cuda(),
-            'test': test_data.cuda(),
+            'train': tr.tensor(train_data),
+            'test': tr.tensor(test_data),
         }
 
         self.n_batches = {
@@ -44,12 +47,12 @@ class BaseDataLoader(object):
             'test': 0
         }
 
-        self.shuffle('train')
-        self.shuffle('test')
+        # self.shuffle('train')
+        # self.shuffle('test')
 
     def shuffle(self, split):
         n = len(self.data[split])
-        perm = np.random.permutation(n)
+        perm = tr.randperm(n)
         self.data[split] = self.data[split][perm]
         if self.supervised:
             self.labels[split] = self.labels[split][perm]
@@ -60,8 +63,8 @@ class BaseDataLoader(object):
         end = start + self.batch_size[split]
         self.batch_index[split] = (self.batch_index[split] + 1) % self.n_batches[split]
 
-        if self.batch_index[split] == 0:
-            self.shuffle(split)
+        # if self.batch_index[split] == 0:
+        #     self.shuffle(split)
 
         data = self.data[split][start: end]
 
@@ -109,3 +112,7 @@ class BaseDataLoader(object):
     @tensor_output(use_gpu=Config.use_gpu)
     def train_data(self):
         return self.data['train']
+
+    @tensor_output(use_gpu=Config.use_gpu)
+    def train_data_labels(self):
+        return self.labels['train']

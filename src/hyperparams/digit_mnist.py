@@ -26,8 +26,8 @@ class Hyperparams(hyperparams.Hyperparams):  # change
     disc_type = 'x'  # 'x' or 'z' or 'xz'
 
     # Dimension Parameters
-    batch_size = 64
-    seed_batch_size = 64
+    batch_size = 256
+    seed_batch_size = 256
 
     logit_x_batch_size = 16
     logit_z_batch_size = 16

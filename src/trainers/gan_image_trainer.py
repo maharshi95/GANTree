@@ -1,6 +1,9 @@
 from __future__ import print_function, division, absolute_import
 import time
+
+import cv2
 import numpy as np
+from numpy.core.multiarray import ndarray
 from sklearn import preprocessing as prep
 from numpy import linalg as LA
 import imageio as im
@@ -27,6 +30,7 @@ import math
 from PIL import Image
 
 import imageio as imag
+
 exp_name = ExperimentContext.exp_name
 
 
@@ -77,7 +81,7 @@ def make_grid(tensor, nrow=8, padding=2,
     xmaps = min(nrow, nmaps)
     ymaps = int(math.ceil(float(nmaps) / xmaps))
     height, width = int(tensor.shape[1] + padding), int(tensor.shape[2] + padding)
-    grid = np.zeros([height * ymaps + 1 + padding // 2, width * xmaps + 1 + padding // 2, 3], dtype=np.float16)
+    grid = np.zeros([height * ymaps + 1 + padding // 2, width * xmaps + 1 + padding // 2, 3], dtype=np.uint8)
     k = 0
     for y in range(ymaps):
         for x in range(xmaps):
@@ -93,18 +97,14 @@ def make_grid(tensor, nrow=8, padding=2,
 
 def save_image(tensor, filename=None, nrow=8, padding=2,
                normalize=False, scale_each=False):
-    # print(type(tensor),tensor.shape)
-    tensor = tensor[:, 0, :, :, None]
+    tensor = as_np(tensor).transpose([0, 2, 3, 1])
+    tensor = ((tensor + 1.0) / 2 * 255).astype(np.uint)
     ndarr = make_grid(tensor, nrow=nrow, padding=padding,
-                      normalize=normalize, scale_each=scale_each)
-    # print(ndarr.shape)
+                      normalize=normalize, scale_each=scale_each)  # type: ndarray
     if (filename is not None):
-        # img = Image.fromarray(ndarr)
-        # img.save(filename)
-        imag.imsave(filename,ndarr)
+        cv2.imwrite(filename, ndarr[:, :, [2, 1, 0]])
 
     ndarr = ndarr.transpose([2, 0, 1])
-
 
     return ndarr[None, :, :, :]
 
@@ -121,7 +121,7 @@ def create_folders(folders=[]):
 
 class GanImgTrainer(BaseTrainer):
     def __init__(self, model, data_loader, hyperparams, train_config, tensorboard_msg='', auto_encoder_dl=None):
-        # type: (BaseGan, BaseDataLoader, base_hp.Hyperparams, TrainConfig, str) -> None
+        # type: (BaseGan, BaseDataLoader, base_hp.Hyperparams, TrainConfig, str, object) -> None
 
         self.H = hyperparams
         self.iter_no = 1
@@ -144,6 +144,7 @@ class GanImgTrainer(BaseTrainer):
         self.writer = {
             'train': SummaryWriter(model.get_log_writer_path('train')),
             'test': SummaryWriter(model.get_log_writer_path('test')),
+            'base': SummaryWriter(model.get_log_writer_path('base'))
         }
 
         # bounds = 6
@@ -250,11 +251,12 @@ class GanImgTrainer(BaseTrainer):
             print('------------------------------------------------------------')
         self.model.train()
 
-    def visualize(self, split):
+    def visualize(self, split, data=None):
+        data = self.seed_data[split] if data is None else data
         self.model.eval()
         tic_viz = time.time()  # def visualize(self, split):
         tic_data_prep = time.time()  # self.model.eval()
-        recon, gen, real = self.save_img(self.seed_data[split], split=split)
+        recon, gen, real = self.save_img(data, split=split)
         # print(split, 'recon', recon.shape, recon.min(), recon.max())        # recon, gen, real = self.save_img(self.seed_data[split])
         # print(split, 'gen', gen.shape, gen.min(), gen.max())
         # print(split, 'real', real.shape, real.min(), real.max())        # writer = self.writer[split]
@@ -268,9 +270,10 @@ class GanImgTrainer(BaseTrainer):
         writer.add_image(image_tag + '-recon', recon, iter_no)  # writer.add_image(image_tag + '-real', real, iter_no)
         writer.add_image(image_tag + '-gen', gen, iter_no)
         writer.add_image(image_tag + '-recon', recon, iter_no)
-        writer.add_image(image_tag + '-real', real,iter_no)  # self.pool.apply_async(log_images, (real, recon, gen, image_tag, iter_no), callback=callback)
+        writer.add_image(image_tag + '-real', real, iter_no)
+        # self.pool.apply_async(log_images, (real, recon, gen, image_tag, iter_no), callback=callback)
 
-        self.model.train() # self.model.train()
+        self.model.train()  # self.model.train()
 
     def train_step_ae(self, x_train, z_train):
         if self.H.train_autoencoder:
@@ -310,13 +313,14 @@ class GanImgTrainer(BaseTrainer):
         x_gen = self.model.decode(z)
         # shape:[1,c,h,w]
 
-        recon_img = save_image(x_recon)  # , self.recon_dir + split + '/' + str(self.iter_no) + '.png')
+        recon_img = save_image(x_recon, filename=self.recon_dir + split + '/' + str(self.iter_no) + '.png')
         gen_img = save_image(x_gen, filename=self.gen_dir + split + '/' + str(self.iter_no) + '.png')
         real = save_image(x)
 
         return recon_img, gen_img, real
 
     def full_train_step(self, visualize=True, validation=True, save_params=True):
+        save_params = False
         dl = self.data_loader
         model = self.model  # type: ImgGAN
         H = self.H
@@ -352,9 +356,14 @@ class GanImgTrainer(BaseTrainer):
         #
         # Tensorboard Log
         if self.is_tboard_log_step():
+            real_logits, _ = self.model.disc_x.forward(x_train)
+            fake_logits, _ = self.model.disc_x.forward(self.model.decoder(z_train))
             for tag, value in metrics.items():
                 self.writer['train'].add_scalar(tag, value.item(), self.iter_no)
             self.writer['train'].add_scalar('switch_train_mode', int(self.train_generator), self.iter_no)
+            if self.iter_no % 100 == 0:
+                self.writer['train'].add_histogram('real_logits', real_logits, self.iter_no)
+                self.writer['train'].add_histogram('fake_logits', fake_logits, self.iter_no)
 
         #
         # Validation Computations

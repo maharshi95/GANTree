@@ -63,7 +63,7 @@ class ImgEncoder(BaseModel):
         return z
 
     def copy(self, *args, **kwargs):
-        return super(ImgEncoder, self).copy(self.z_size,out_scale=self._np_out_scale)
+        return super(ImgEncoder, self).copy(self.z_size, out_scale=self._np_out_scale)
 
     @property
     def z_bounds(self):
@@ -114,7 +114,7 @@ class ImgDecoder(BaseModel):
         return z
 
     def copy(self, *args, **kwargs):
-        return super(ImgDecoder, self).copy(self.z_size,out_scale=self._np_out_scale)
+        return super(ImgDecoder, self).copy(self.z_size, out_scale=self._np_out_scale)
 
 
 class ImgDiscx(BaseModel):
