@@ -461,8 +461,9 @@ def get_data(node, split):
     Z = tr.tensor([])
 
     if split == 'train':
-        data_full = dl.train_data()
-        data = data_full[np.where(dl.train_data_labels() != 1)]
+        data = dl.train_data()
+        # data_full = dl.train_data()
+        # data = data_full[np.where(dl.train_data_labels() != 1)]
 
     # print(len(data))
 
@@ -490,37 +491,33 @@ def get_data(node, split):
 
 from scipy.spatial import distance
 
-def train_phase_1_part2(node, part2_epochs = 7):
+def train_phase_1_part2(node, threshold = 2.5, part2_epochs = 7):
     print('entered phase 1 part 2')
-
-    threshold = 2.5
-    part2_epochs = part2_epochs
-
 
     """ define the train dataset and the corresponding labels"""
 
-    # train_data = dl_set[0].train_data()
-    # train_data_labels = dl_set[0].train_data_labels()
+    train_data = dl_set[0].train_data()
+    train_data_labels = dl_set[0].train_data_labels()
 
-    train_data_full = dl_set[0].train_data()
-    train_data_labels_full = dl_set[0].train_data_labels()
+    # train_data_full = dl_set[0].train_data()
+    # train_data_labels_full = dl_set[0].train_data_labels()
 
-    train_data = train_data_full[np.where(train_data_labels_full != 1)]
-    train_data_labels = train_data_labels_full[np.where(train_data_labels_full != 1)]
+    # train_data = train_data_full[np.where(train_data_labels_full != 1)]
+    # train_data_labels = train_data_labels_full[np.where(train_data_labels_full != 1)]
 
 
     """ plot the eigenvalues of the pca applied on the z-dimension, upon which kmeans is applied """
 
-    eigenvalues = node.kmeans.pca.explained_variance_
-    total_eigenvalues = sum(eigenvalues)
-    summed = [sum(eigenvalues[:i]) for i in range(1, len(eigenvalues)+1)]
-    summed = summed / total_eigenvalues
+    # eigenvalues = node.kmeans.pca.explained_variance_
+    # total_eigenvalues = sum(eigenvalues)
+    # summed = [sum(eigenvalues[:i]) for i in range(1, len(eigenvalues)+1)]
+    # summed = summed / total_eigenvalues
 
-    plt.plot(summed, 'ro')
-    fig_eigen = plt.gcf()
-    node.trainer.writer['train'].add_figure('eigenvalues', fig_eigen, 0)
-    path_eigen = Paths.get_result_path('eigenvalues/%s_%03d' % ('eigenvalues', 0))
-    fig_eigen.savefig(path_eigen)
+    # plt.plot(summed, 'ro')
+    # fig_eigen = plt.gcf()
+    # node.trainer.writer['train'].add_figure('eigenvalues', fig_eigen, 0)
+    # path_eigen = Paths.get_result_path('eigenvalues/%s_%03d' % ('eigenvalues', 0))
+    # fig_eigen.savefig(path_eigen)
 
 
     """ visualize the initial plot """
@@ -660,7 +657,7 @@ def train_phase_1_part2(node, part2_epochs = 7):
 
                 """ train the node """
 
-                z_batch, x_recon, preds, x_clf_loss_assigned, x_assigned_recon_loss, loss_assigned, x_clf_loss_unassigned, x_unassigned_recon_loss, loss_unassigned, x_clf_cross_loss, loss_recon, loss_log_assigned_ch0, loss_log_assigned_ch1 = node.step_train_x_clf(x_clf_train_batch, training_list, w1 = 1.0, w2 = 1.0, w3 = 0.0, w4 = 0.0, with_PCA = True, threshold = threshold)
+                z_batch, x_recon, preds, x_clf_loss_assigned, x_assigned_recon_loss, loss_assigned, x_clf_loss_unassigned, x_unassigned_recon_loss, loss_unassigned, x_clf_cross_loss, loss_recon, loss_log_assigned_ch0, loss_log_assigned_ch1 = node.step_train_x_clf_phase1part2(x_clf_train_batch, training_list, w1 = 1.0, w2 = 1.0, w3 = 0.0, w4 = 0.0, with_PCA = True, threshold = threshold)
 
 
                 """ plot the losses and ratio of labels and unlabeled points every 10 iterations"""
@@ -704,7 +701,7 @@ def train_phase_1_part2(node, part2_epochs = 7):
 
                 """ show figures of training data every 200 iterations"""
 
-                if current_iter_no % 200 == 0:
+                if current_iter_no % 200 == 0 and current_iter_no != 0:
                     
 
                     """ get the current labels of each embedding in the train dataset """
@@ -887,66 +884,177 @@ def train_phase_1_part2(node, part2_epochs = 7):
         |
         |-- part 2 -- clustering of points inside the two clusters """
 
-def train_phase_1_part1(node, n_iterations):
+def train_phase_1_part1(node, n_iterations, threshold):
     print('entered phase 1 part 1')
 
     # pca2rand = visualize_plots_phase1part1(iter_no=0, node=node, x_batch=x_seed, labels=l_seed, tag='x_clf_plots')
+
+    train_data = dl_set[0].train_data()
+    train_data_labels = dl_set[0].train_data_labels()
+
+    # train_data_full = dl_set[0].train_data()
+    # train_data_labels_full = dl_set[0].train_data_labels()
+
+    # train_data = train_data_full[np.where(train_data_labels_full != 1)]
+    # train_data_labels = train_data_labels_full[np.where(train_data_labels_full != 1)]
+
+    batchSize = dl_set[0].batch_size['train']
 
     with tqdm(total=n_iterations) as pbar:
         for iter_no in range(n_iterations):
             tic = time.time()
             node.trainer.iter_no = iter_no
 
-            # if (iter_no < (n_iterations - 1)) and j < part2_epochs:
-            #         print("in")
-            #         start_no = iter_no * batchSize
-            #         end_no = start_no + batchSize
-            #         training_list = [i for i in range(start_no, end_no)]
-            #         x_clf_train_batch = train_data[training_list]
-            #     elif j < part2_epochs:
-            #         print("out")
-            #         start_no = iter_no * batchSize
-            #         end_no = len(train_data)
-            #         training_list = [i for i in range(start_no, end_no)]
-            #         x_clf_train_batch = train_data[training_list]
+            start_no = (iter_no * batchSize) % len(train_data)
+            end_no = (start_no + batchSize) % len(train_data)
 
-            i = iter_no + 1
+            if end_no < start_no:
+                training_list = [i for i in range(start_no, len(train_data))]
+                training_list.extend([i for i in range(0, end_no)])
+            else:
+                training_list = [i for i in range(start_no, end_no)]
 
-            # Training common encoder over cross-classification loss with a batch across common dataloader
-            x_clf_train_batch, _ = dl_set[0].next_batch('train')
-            z_batch, x_recon, x_recon_loss, x_clf_loss, loss, preds, time_taken = node.step_train_x_clf(x_clf_train_batch)
-            # mean_time_taken = 0.8 * mean_time_taken + 0.2 * time_taken
 
-            positive = np.sum(preds == 0.)
-            negative = np.sum(preds == 1.)
+            x_clf_train_batch = train_data[training_list]
+            z_batch, x_recon, preds, loss, x_clf_cross_loss, x_recon_loss = node.step_train_x_clf_phase1part1(x_clf_train_batch, training_list = training_list, with_PCA = False)
 
-            ratio = positive * 1.0 / (positive + negative)
-
-            if i % 10 == 0:
-                node.trainer.writer['train'].add_scalar('x_clf_loss', x_clf_loss, iter_no)
-                node.trainer.writer['train'].add_scalar('x_recon_loss', x_recon_loss, iter_no)
-                node.trainer.writer['train'].add_scalar('loss', loss, iter_no)
-                node.trainer.writer['train'].add_scalar('split_ratio', ratio, iter_no)
-
-            child0mean = node.get_child(0).prior_means
-            child1mean = node.get_child(1).prior_means
-            meanDistance = np.linalg.norm(child0mean - child1mean)
-
+            meanDistance = distance.mahalanobis(node.kmeans.means[1], node.kmeans.means[0], node.kmeans.covs[0])
             node.trainer.writer['train'].add_scalar('meanDistance', meanDistance, iter_no)
 
+
             if iter_no % 10 == 0:
+
                 print(meanDistance)
 
-            if meanDistance < 15.0:
-                if iter_no % 10 == 0:
-                    Z = get_z(node=node, batch_size=2048)
-                    simcrossdist = node.update_child_params(x_seed, Z= Z.cpu().numpy(), max_iter=5)
+                positive = np.sum(preds == 0.)
+                negative = np.sum(preds == 1.)
+                ratio = positive * 1.0 / (positive + negative)
+
+                node.trainer.writer['train'].add_scalar('x_clf_loss_part1', x_clf_cross_loss, iter_no)
+                node.trainer.writer['train'].add_scalar('x_recon_loss_part1', x_recon_loss, iter_no)
+                node.trainer.writer['train'].add_scalar('loss_part1', loss, iter_no)
+                node.trainer.writer['train'].add_scalar('split_ratio_part1', ratio, iter_no)
+
+
+                if meanDistance < 16.0:
+                    Z = get_data(node=node, split = 'train')
+                    simcrossdist = node.update_child_params(x_seed, Z= Z.cpu().numpy(), max_iter=5, applyPCA = False)
                     node.trainer.writer['train'].add_scalar('simcrossdist', simcrossdist, iter_no)
 
             pbar.update(n=1)
 
-            if i < 10 or i % 10 == 0:
-                visualize_plots(iter_no=i, node=node, x_batch=x_seed, labels=l_seed, tag='x_clf_plots', pca2rand = pca2rand)
+
+    current_iter_no = 0
+    p = node.kmeans.pred
+
+
+    """ plot the count of unassigned vs assigned labels
+        purple -- unassigned
+        green -- assigned """
+
+    unassigned_labels = [0 for i in range(10)]
+    assigned_labels = [0 for i in range(10)]
+
+    for i in range(len(p)):
+        if p[i] == 2:
+            unassigned_labels[train_data_labels[i]] += 1
+        else:
+            assigned_labels[train_data_labels[i]] += 1
+
+    barWidth = 0.3
+    r1 = np.arange(len(unassigned_labels))
+    r2 = [x+barWidth for x in r1]
+
+    plt.bar(r1, unassigned_labels, width = barWidth, color = 'purple', edgecolor = 'black', capsize=7)
+    plt.bar(r2, assigned_labels, width = barWidth, color = 'green', edgecolor = 'black', capsize=7)
+    plt.xticks([r + barWidth for r in range(len(unassigned_labels))], ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
+    plt.ylabel('count')
+
+    fig_train_assigned = plt.gcf()
+    node.trainer.writer['train'].add_figure('assigned_labels_count', fig_train_assigned, current_iter_no)
+    path_assign_train = Paths.get_result_path('train_assigned/%s_%03d' % ('train_assigned', current_iter_no))
+    fig_train_assigned.savefig(path_assign_train)
+
+
+
+    """ plot the percentage of assigned labels in cluster 0 and cluster 1
+        red -- cluster 0
+        blue -- cluster 1 """
+
+    l_seed_ch0 = train_data_labels[np.where(p == 0)]
+    l_seed_ch1 = train_data_labels[np.where(p == 1)]
+
+    count_ch0 = [0 for i in range(10)]
+    count_ch1 = [0 for i in range(10)]
+    prob_ch0 = [0 for i in range(10)]
+    prob_ch1 = [0 for i in range(10)]
+
+    for i in l_seed_ch0:
+        count_ch0[i] += 1
+
+    for i in l_seed_ch1:
+        count_ch1[i] += 1
+
+    for i in range(10):
+        if (count_ch0[i] + count_ch1[i]) != 0:
+            prob_ch0[i] = count_ch0[i] * 1.0 / (count_ch0[i] + count_ch1[i])
+            prob_ch1[i] = count_ch1[i] * 1.0 / (count_ch0[i] + count_ch1[i])
+        else:
+            prob_ch0[i] = 0
+            prob_ch1[i] = 0
+
+    plt.bar(r1, prob_ch0, width = barWidth, color = 'red', edgecolor = 'black', capsize=7)
+    plt.bar(r2, prob_ch1, width = barWidth, color = 'blue', edgecolor = 'black', capsize=7)
+    plt.xticks([r + barWidth for r in range(len(prob_ch0))], ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
+    plt.ylabel('count')
+
+    fig_confidence_train = plt.gcf()
+    node.trainer.writer['train'].add_figure('confidence', fig_confidence_train, current_iter_no)
+    path_confidence_train = Paths.get_result_path('train_confidence/%s_%03d' % ('train_confidence', current_iter_no))
+    fig_confidence_train.savefig(path_confidence_train)
+
+
+
+    """ get count of points that exceed the threshold of phase 1 part 2 """
+
+    aboveThresholdLabels_ch0 = [0 for i in range(10)]
+    aboveThresholdLabels_ch1 = [0 for i in range(10)]
+
+    # percentAbove_ch0 = [0 for i in range(10)]
+    # percentAbove_ch1 = [0 for i in range(10)]
+
+    for i in range(len(p)):
+        if p[i] == 0:
+            if (distance.mahalanobis(Z[i], node.kmeans.means[0], node.kmeans.covs[0])) > threshold:
+                aboveThresholdLabels_ch0[train_data_labels[i]] += 1
+        elif p[i] == 1:
+            if (distance.mahalanobis(Z[i], node.kmeans.means[1], node.kmeans.covs[1])) > threshold:
+                aboveThresholdLabels_ch1[train_data_labels[i]] += 1
+
+    # for i in range(10):
+    #     if (count_ch0[i]) != 0:
+    #         percentAbove_ch0[i] = aboveThresholdLabels_ch0[i] * 1.0 / count_ch0[i]
+    #     else:
+    #         percentAbove_ch0[i] = 0
+
+    #     if (count_ch1[i] != 0):
+    #         percentAbove_ch1[i] = aboveThresholdLabels_ch1[i] * 1.0 / count_ch1[i]
+    #     else:
+    #         percentAbove_ch1[i] = 0
+
+    plt.bar(r1, aboveThresholdLabels_ch0, width = barWidth, color = 'red', edgecolor = 'black', capsize=7)
+    plt.bar(r2, aboveThresholdLabels_ch1, width = barWidth, color = 'blue', edgecolor = 'black', capsize=7)
+    plt.xticks([r + barWidth for r in range(len(aboveThresholdLabels_ch0))], ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
+    plt.ylabel('count')
+
+    fig_above_threshold_train = plt.gcf()
+    node.trainer.writer['train'].add_figure('aboveThresholdTrain', fig_above_threshold_train, current_iter_no)
+    path_above_threshold_train = Paths.get_result_path('train_above_threshold/%s_%03d' % ('above_threshold_train', current_iter_no))
+    fig_above_threshold_train.savefig(path_above_threshold_train)
+            
+
+            # if i < 10 or i % 10 == 0:
+                # visualize_plots(iter_no=i, node=node, x_batch=x_seed, labels=l_seed, tag='x_clf_plots', pca2rand = pca2rand)
 
 
 
@@ -972,19 +1080,21 @@ def train_phase_2(node, n_iterations):
 def train_node(node, x_clf_iters=200, part2_epochs = 7, gan_iters=10000):
     # type: (GNode, int, int) -> None
     global future_objects
+    threshold = 2.5
 
     train_data_full = dl_set[0].train_data()
     train_data_labels_full = dl_set[0].train_data_labels()
 
-    train_data = train_data_full[np.where(train_data_labels_full != 1)]
+    # train_data = train_data_full[np.where(train_data_labels_full != 1)]
+    train_data = train_data_full
 
-    # child_nodes = tree.split_node(node, x_batch = train_data, fixed=False)
+    child_nodes = tree.split_node(node, x_batch = train_data, fixed=False, applyPCA = False)
 
-    # train_phase_1_part1(node, x_clf_iters)
+    train_phase_1_part1(node, n_iterations = x_clf_iters, threshold = threshold)
 
-    child_nodes = tree.load_children(node, part2_epochs)
+    # child_nodes = tree.load_children(node, part2_epochs)
 
-    train_phase_1_part2(node, part2_epochs)
+    train_phase_1_part2(node, threshold = threshold, part2_epochs = part2_epochs)
 
     # nodes = {node.id: node for node in child_nodes}  # type: dict[int, GNode]
 
@@ -1063,8 +1173,10 @@ dist_params = DistParams(means=means, cov=cov, pi=1.0, prob=1.0)
 dl = DataLoaderFactory.get_dataloader(H.dataloader, H.batch_size, H.batch_size)
 
 x_seed_full, l_seed_full = dl.random_batch('test', 512)
-x_seed = x_seed_full[np.where(l_seed_full != 1)]
-l_seed = l_seed_full[np.where(l_seed_full != 1)]
+x_seed = x_seed_full
+l_seed = l_seed_full
+# x_seed = x_seed_full[np.where(l_seed_full != 1)]
+# l_seed = l_seed_full[np.where(l_seed_full != 1)]
 
 tree = GanTree('gtree', ImgGAN, H, x_seed)
 root = tree.create_child_node(dist_params, gan)
@@ -1092,7 +1204,7 @@ try:
     logger.info(colored('Next Node to split: %d' % node_id, 'green', attrs=['bold']))
     root = tree.nodes[node_id]
     # train_node(root, x_clf_iters=1500, gan_iters=20000)  # , min_gan_iters=5000, x_clf_lim=0.00001, x_recon_limit=0.004)
-    train_node(root, x_clf_iters=14, part2_epochs = 7, gan_iters=20000)  # , min_gan_iters=5000, x_clf_lim=0.00001, x_recon_limit=0.004)
+    train_node(root, x_clf_iters=1300, part2_epochs = 12, gan_iters=20000)  # , min_gan_iters=5000, x_clf_lim=0.00001, x_recon_limit=0.004)
 
 except Exception as e:
     pool.close()

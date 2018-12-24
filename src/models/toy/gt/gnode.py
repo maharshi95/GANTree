@@ -306,7 +306,77 @@ class GNode(nn.Module):
 
         return X, preds
 
+    def reassignLabels(self, X, threshold):
+        Z = self.post_gmm_encode(X, transform = False)
+
+        preds = self.kmeans.pred
+
+        for i in range(len(preds)):
+            if (distance.mahalanobis(Z[i], self.kmeans.means[0], self.kmeans.covs[0]) > threshold) and (distance.mahalanobis(Z[i], self.kmeans.means[1], self.kmeans.covs[1]) > threshold):
+                preds[i] = 2
+
+        self.kmeans.pred = preds
+
     # fixed mu
+
+    # def init_child_params(self, X, n_components = 2, Z=None, fixed_sigma=True, applyPCA = False):
+    #     if Z is None:
+    #         Z = self.post_gmm_encode(X, transform=False)
+    #     # else:
+    #         # logger.info(colored('Z is not None! Fitting gmm directly on given Z Warning: not calling post_gmm_encoder',
+    #                             # color='red', attrs=['bold']))
+
+    #     if applyPCA:
+        
+    #         pcakmeans = PCA(n_components = 42)
+    #         pcakmeans.fit(Z)
+    #         Z_reduced = pcakmeans.transform(Z)
+
+    #     else:
+    #         Z_reduced = np.asarray(Z)
+
+    #     kmeans = KMeans(n_components, max_iter=1000)
+
+    #     p = kmeans.fit_predict(Z_reduced)
+
+    #     # means = [None for i in range(n_components)]
+    #     # means1 = [3.0 for i in range(42)]
+    #     # means2 = [-3.0 for i in range(42)]
+    #     # # means1[0] = 3.0
+    #     # # means2[0] = -3.0
+    #     # means = pcakmeans.inverse_transform([means1, means2])
+
+    #     means1 = [0.8 for i in range(100)]
+    #     means2 = [-0.8 for i in range(100)]
+    #     # means1[0] = 4.5
+    #     # means2[0] = -4.5
+    #     means = np.asarray([means1, means2])
+
+    #     covs = [None for i in range(n_components)]
+    #     weights = [None for i in range(n_components)]
+
+    #     for i in range(n_components):
+    #         # print(i)
+    #         Z_temp = Z[np.where(p == i)]
+    #         # print(Z_temp[:32])
+    #         # means[i] = np.mean(Z_temp, axis=0)
+    #         covs[i] = np.eye(Z.shape[-1]) if fixed_sigma else np.cov(Z_temp.T)
+    #         print(len(Z_temp))
+    #         print(len(Z))
+    #         weights[i] = (1.0* len(Z_temp))/len(Z)
+
+    #     # for i in range(len(p)):
+    #     #     if (distance.mahalanobis(Z[i], means[0], covs[0]) > 2) and (distance.mahalanobis(Z[i], means[1], covs[01]) > 2):
+    #     #         p[i] = 2
+
+    #     self.kmeans = KMeansCltr(means, covs, weights, p, kmeans.cluster_centers_, pcakmeans)
+
+    #     # print(means)
+    #     # print(covs)
+    #     print(weights)
+
+
+    # not fixed mu
 
     def init_child_params(self, X, n_components = 2, Z=None, fixed_sigma=True, applyPCA = False):
         if Z is None:
@@ -320,7 +390,7 @@ class GNode(nn.Module):
             pcakmeans = PCA(n_components = 42)
             pcakmeans.fit(Z)
             Z_reduced = pcakmeans.transform(Z)
-
+        
         else:
             Z_reduced = np.asarray(Z)
 
@@ -328,154 +398,22 @@ class GNode(nn.Module):
 
         p = kmeans.fit_predict(Z_reduced)
 
-        # means = [None for i in range(n_components)]
-        # means1 = [3.0 for i in range(42)]
-        # means2 = [-3.0 for i in range(42)]
-        # # means1[0] = 3.0
-        # # means2[0] = -3.0
-        # means = pcakmeans.inverse_transform([means1, means2])
 
-        means1 = [0.8 for i in range(100)]
-        means2 = [-0.8 for i in range(100)]
-        # means1[0] = 4.5
-        # means2[0] = -4.5
-        means = np.asarray([means1, means2])
-
+        means = [None for i in range(n_components)]
         covs = [None for i in range(n_components)]
         weights = [None for i in range(n_components)]
 
         for i in range(n_components):
-            # print(i)
             Z_temp = Z[np.where(p == i)]
-            # print(Z_temp[:32])
-            # means[i] = np.mean(Z_temp, axis=0)
+            means[i] = np.mean(Z_temp, axis=0)
             covs[i] = np.eye(Z.shape[-1]) if fixed_sigma else np.cov(Z_temp.T)
-            print(len(Z_temp))
-            print(len(Z))
             weights[i] = (1.0* len(Z_temp))/len(Z)
 
-        # for i in range(len(p)):
-        #     if (distance.mahalanobis(Z[i], means[0], covs[0]) > 2) and (distance.mahalanobis(Z[i], means[1], covs[01]) > 2):
-        #         p[i] = 2
-
-        self.kmeans = KMeansCltr(means, covs, weights, p, kmeans.cluster_centers_, pcakmeans)
+        self.kmeans = KMeansCltr(means, covs, weights, p, kmeans.cluster_centers_, None)
 
         # print(means)
         # print(covs)
-        print(weights)
-
-    def reassignLabels(self, X, threshold):
-        Z = self.post_gmm_encode(X, transform = False)
-
-        preds = self.kmeans.pred
-
-        for i in range(len(preds)):
-            if (distance.mahalanobis(Z[i], self.kmeans.means[0], self.kmeans.covs[0]) > threshold) and (distance.mahalanobis(Z[i], self.kmeans.means[1], self.kmeans.covs[1]) > threshold):
-                preds[i] = 2
-
-        self.kmeans.pred = preds
-
-    def assignLabels(self, X, percentile, limit, reassignLabels = False):
-        Z = self.post_gmm_encode(X, transform = False)
-
-        p = self.kmeans.pred
-
-        if reassignLabels:
-            p = np.asarray([2 for i in range(len(p))])
-
-        cluster_distances = []
-        cluster_labels = []
-
-        for i in range(len(p)):
-            if p[i] == 2:
-                dis0 = distance.mahalanobis(Z[i], self.kmeans.means[0], self.kmeans.covs[0])
-                dis1 = distance.mahalanobis(Z[i], self.kmeans.means[1], self.kmeans.covs[1])
-
-                # dis0 = distance.mahalanobis(np.dot(Z[i], self.kmeans.means[1] - self.kmeans.means[0]), self.kmeans.means[0], self.kmeans.covs[0])
-                # dis1 = distance.mahalanobis(np.dot(Z[i], self.kmeans.means[1] - self.kmeans.means[0]), self.kmeans.means[1], self.kmeans.covs[1])
-
-
-                d = min(dis0/dis1, dis1/dis0)
-                cluster_distances.append(d)
-
-                if d == dis0/dis1:
-                    cluster_labels.append(0)
-                elif d == dis1/dis0:
-                    cluster_labels.append(1)
-
-        sorted_list = np.argsort(cluster_distances)
-
-        print(len(sorted_list))
-
-        total_influx = int(percentile * len(sorted_list))
-
-        print(total_influx)
-
-        if total_influx < limit:
-            total_influx = min(limit, len(sorted_list))
-            update_list = sorted_list[:total_influx]
-        else:
-            update_list = sorted_list[:total_influx]
-
-        print(len(update_list))
-        print(len(cluster_labels))
-
-        print(update_list)
-
-        # update_list_1 = [int(i) for i in update_list]
-        # update_labels = []
-
-        for i in range(len(update_list)):
-            p[update_list[i]] = cluster_labels[update_list[i]]
-            # update_labels.append(cluster_labels[update_list[i]])
-
-        # p[update_list_1] = update_labels
-
-        self.kmeans.pred = p
-
-
-    # not fixed mu
-
-    # def init_child_params(self, X, n_components = 2, Z=None, fixed_sigma=True, applyPCA = True):
-    #     if Z is None:
-    #         Z = self.post_gmm_encode(X, transform=False)
-    #     # else:
-    #         # logger.info(colored('Z is not None! Fitting gmm directly on given Z Warning: not calling post_gmm_encoder',
-    #                             # color='red', attrs=['bold']))
-
-    #     if applyPCA:
-        
-    #         pcakmeans = PCA(n_components = 5)
-    #         pcakmeans.fit(Z)
-    #         Z_reduced = pcakmeans.transform(Z)
-        
-    #     else:
-    #         Z_reduced = np.asarray(Z)
-
-    #     kmeans = KMeans(n_components, max_iter=1000)
-
-    #     p = kmeans.fit_predict(Z_reduced)
-    #     # print(p[:32])
-
-    #     means = [None for i in range(n_components)]
-    #     covs = [None for i in range(n_components)]
-    #     weights = [None for i in range(n_components)]
-
-    #     for i in range(n_components):
-    #         # print(i)
-    #         Z_temp = Z[np.where(p == i)]
-    #         # print(Z_temp[:32])
-    #         means[i] = np.mean(Z_temp, axis=0)
-    #         covs[i] = np.eye(Z.shape[-1]) if fixed_sigma else np.cov(Z_temp.T)
-    #         print(len(Z_temp))
-    #         print(len(Z))
-    #         weights[i] = (1.0* len(Z_temp))/len(Z)
-
-    #     self.kmeans = KMeansCltr(means, covs, weights, p, kmeans.cluster_centers_)
-
-    #     # print(means)
-    #     # print(covs)
-    #     print(weights)
+        # print(weights)
 
     def update_child_params(self, X, Z=None, max_iter = 20, fixed_sigma=True, applyPCA = True):
         if Z is None:
@@ -523,7 +461,7 @@ class GNode(nn.Module):
         similar_dist = np.linalg.norm(means[0] - self.kmeans.means[0]) + np.linalg.norm(means[1] - self.kmeans.means[1])
         cross_dist = np.linalg.norm(means[1] - self.kmeans.means[0]) + np.linalg.norm(means[0] - self.kmeans.means[1])
 
-        print(similar_dist-cross_dist)
+        # print(similar_dist-cross_dist)
         # print(cross_dist)
         # print(means[0])
         # print(means[1])
@@ -671,7 +609,58 @@ class GNode(nn.Module):
             c.update_dist_params(means, cov=cov, prior_prob=weight)
             N[i] += ni
 
-    def step_train_x_clf(self, x_batch, training_list = [], clip=0.0, w1 = 1.0, w2 = 1.0, w3 = 1.0, w4 = 1.0, use_pre=False, frozenLabels = True, with_PCA = False, threshold = 4):
+    def step_train_x_clf_phase1part1(self, x_batch, training_list = [], clip=0.0, with_PCA = False, threshold = 4):
+
+        id1, id2 = self.child_ids
+
+        node1 = self.child_nodes[id1]
+        node2 = self.child_nodes[id2]
+
+        mu1, cov1, w1 = node1.tensor_params
+        mu2, cov2, w2 = node2.tensor_params
+
+
+        z_batch = self.post_gmm_encoder.forward(x_batch)
+
+        x_recon, preds = self.post_gmm_decode(z_batch, train = True, training_list = training_list, k=0.0, with_PCA = with_PCA)
+        batch_size = x_recon.shape[0]
+   
+
+        x_clf_cross_loss = tr.max(tr.tensor(clip), losses.x_clf_cross_loss(mu1, cov1, w1, mu2, cov2, w2, z_batch, preds))
+
+        x_loss_vector = tr.sum((x_recon.view([batch_size, -1]) - x_batch.view([batch_size, -1])) ** 2, dim=-1)
+
+        c = Counter([a for a in preds])
+        weights = tr.Tensor([
+            1.0 / np.maximum(c[0], 1e-9),
+            1.0 / np.maximum(c[1], 1e-9)
+        ])[preds]
+
+
+        x_recon_loss = tr.sum(x_loss_vector * weights)
+
+
+        # _, cov = tr_utils.mu_cov(z_batch)
+        #
+        # _, sigmas, _ = tr.svd(cov)
+        #
+        # sig_sv1 = tr.clamp(tr.svd(cov1)[1], 1e-5) ** 2
+        # sig_sv2 = tr.clamp(tr.svd(cov2)[1], 1e-5) ** 2
+        #
+        # loss_cov1 = tr.sum(sig_sv1)
+        # loss_cov2 = tr.sum(sig_sv2)
+        # loss_inv_cov1 = tr.sum(1 / sig_sv1)
+        # loss_inv_cov2 = tr.sum(1 / sig_sv2)
+
+        loss = x_recon_loss + x_clf_cross_loss
+
+        self.opt_xrecon.zero_grad()
+        loss.backward(retain_graph = True)
+        self.opt_xun.step()
+
+        return z_batch, x_recon, preds, loss, x_clf_cross_loss, x_recon_loss
+
+    def step_train_x_clf_phase1part2(self, x_batch, training_list = [], clip=0.0, w1 = 1.0, w2 = 1.0, w3 = 1.0, w4 = 1.0, use_pre=False, frozenLabels = True, with_PCA = False, threshold = 4):
 
         id1, id2 = self.child_ids
 
@@ -1100,3 +1089,57 @@ class GNode(nn.Module):
         Z = self.post_gmm_encode(X)
         indices = self.filter_i(Z, prob_threshold)
         return X[indices]
+
+    # def assignLabels(self, X, percentile, limit, reassignLabels = False):
+    #     Z = self.post_gmm_encode(X, transform = False)
+
+    #     p = self.kmeans.pred
+
+    #     if reassignLabels:
+    #         p = np.asarray([2 for i in range(len(p))])
+
+    #     cluster_distances = []
+    #     cluster_labels = []
+
+    #     for i in range(len(p)):
+    #         if p[i] == 2:
+    #             dis0 = distance.mahalanobis(Z[i], self.kmeans.means[0], self.kmeans.covs[0])
+    #             dis1 = distance.mahalanobis(Z[i], self.kmeans.means[1], self.kmeans.covs[1])
+
+    #             d = min(dis0/dis1, dis1/dis0)
+    #             cluster_distances.append(d)
+
+    #             if d == dis0/dis1:
+    #                 cluster_labels.append(0)
+    #             elif d == dis1/dis0:
+    #                 cluster_labels.append(1)
+
+    #     sorted_list = np.argsort(cluster_distances)
+
+    #     print(len(sorted_list))
+
+    #     total_influx = int(percentile * len(sorted_list))
+
+    #     print(total_influx)
+
+    #     if total_influx < limit:
+    #         total_influx = min(limit, len(sorted_list))
+    #         update_list = sorted_list[:total_influx]
+    #     else:
+    #         update_list = sorted_list[:total_influx]
+
+    #     print(len(update_list))
+    #     print(len(cluster_labels))
+
+    #     print(update_list)
+
+    #     # update_list_1 = [int(i) for i in update_list]
+    #     # update_labels = []
+
+    #     for i in range(len(update_list)):
+    #         p[update_list[i]] = cluster_labels[update_list[i]]
+    #         # update_labels.append(cluster_labels[update_list[i]])
+
+    #     # p[update_list_1] = update_labels
+
+    #     self.kmeans.pred = p
