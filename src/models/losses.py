@@ -140,8 +140,6 @@ def x_clf_loss_unassigned(mu1, sig1, w1, mu2, sig2, w2, z, preds=None):
         preds[i] = 1
 
     c = Counter(preds)
-    print(c[0])
-    print(c[1])
 
     count1 = len(np.where(loss == -p_z_m1)[0])
     count2 = len(np.where(loss == -p_z_m2)[0])
@@ -152,9 +150,6 @@ def x_clf_loss_unassigned(mu1, sig1, w1, mu2, sig2, w2, z, preds=None):
         ])[preds]
 
     loss = tr.sum(loss * weights)
-
-    print(count1)
-    print(count2)
 
     # loss = loss.mean()
 

@@ -364,26 +364,14 @@ class GNode(nn.Module):
         # print(covs)
         print(weights)
 
-    def reassignLabels(self, X, threshold, reassignLabels = False):
+    def reassignLabels(self, X, threshold):
         Z = self.post_gmm_encode(X, transform = False)
 
         preds = self.kmeans.pred
 
-        if reassignLabels:
-            for i in range(len(preds)):
-                if (distance.mahalanobis(Z[i], self.kmeans.means[0], self.kmeans.covs[0]) > threshold) and (distance.mahalanobis(Z[i], self.kmeans.means[1], self.kmeans.covs[1]) > threshold):
-                    preds[i] = 2
-
-        # if not reassignLabels:
-        #     for i in range(len(preds)):
-        #         if preds[i] == 2:
-        #             dis0 = distance.mahalanobis(Z[i], self.kmeans.means[0], self.kmeans.covs[0])
-        #             dis1 = distance.mahalanobis(Z[i], self.kmeans.means[1], self.kmeans.covs[1])
-
-        #             if (dis0 < dis1) and (dis0 < threshold):
-        #                 preds[i] = 0
-        #             elif (dis0 > dis1) and (dis1 < threshold):
-        #                 preds[i] = 1
+        for i in range(len(preds)):
+            if (distance.mahalanobis(Z[i], self.kmeans.means[0], self.kmeans.covs[0]) > threshold) and (distance.mahalanobis(Z[i], self.kmeans.means[1], self.kmeans.covs[1]) > threshold):
+                preds[i] = 2
 
         self.kmeans.pred = preds
 
@@ -685,25 +673,7 @@ class GNode(nn.Module):
 
     def step_train_x_clf(self, x_batch, training_list = [], clip=0.0, w1 = 1.0, w2 = 1.0, w3 = 1.0, w4 = 1.0, use_pre=False, frozenLabels = True, with_PCA = False, threshold = 4):
 
-        #recon_loss
-        w1 = w1
-        #likelihood_loss
-        w2 = w2
-        #hinge_loss
-        w3 = w3
-        #cross_class_loss
-        w4 = w4
-
-        # if start_no == 0:
-        #     print(w1)
-        #     print(w2)
-        #     print(w3)
-        #     print(w4)
-
         id1, id2 = self.child_ids
-
-        # print(id1)
-        # print(id2)
 
         node1 = self.child_nodes[id1]
         node2 = self.child_nodes[id2]
@@ -715,14 +685,7 @@ class GNode(nn.Module):
 
         z_batch = self.post_gmm_encoder.forward(x_batch)
 
-        # print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
-        # print(training_list)
-
         x_recon, preds = self.post_gmm_decode(z_batch, train = True, training_list = training_list, k=0.0, with_PCA = with_PCA, threshold = threshold)
-
-        # print(preds.shape)
-        # print(preds)
-        # print(training_list)
 
         if use_pre:
             z_batch_pre = self.pre_gmm_encode(x_batch)
@@ -736,7 +699,6 @@ class GNode(nn.Module):
         if len(z_batch[np.where(preds == 2)]) == 0:
             x_clf_loss_unassigned = 0
         else:
-            # x_clf_loss_unassigned = tr.max(tr.tensor(clip), losses.x_clf_loss_unassigned(mu1, cov1, w1, mu2, cov2, w2, z_batch[np.where(preds == 2)], preds[np.where(preds == 2)]))
             x_clf_loss_unassigned = losses.x_clf_loss_unassigned(mu1, cov1, w1, mu2, cov2, w2, z_batch[np.where(preds == 2)], preds[np.where(preds == 2)])
 
         x_clf_cross_loss = tr.max(tr.tensor(clip), losses.x_clf_cross_loss(mu1, cov1, w1, mu2, cov2, w2, z_batch, preds))
