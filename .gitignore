@@ -106,8 +106,6 @@ venv.bak/
 .mypy_cache/
 
 /logs/*
-/experiments/*
 /weights/*
-/data/*
 /.idea
 
