@@ -88,12 +88,20 @@ class GanTree(BaseModel):
         self.nodes.append(new_node)
         return new_node
 
-    def split_node(self, parent, x_batch=None, fixed=True):
+    def split_node(self, parent, x_batch=None, fixed=True, applyPCA = True, H = None):
         # type: (GNode, np.ndarray, bool) -> list[GNode]
         x_batch = self.x_batch if x_batch is None else x_batch
 
-        child_nodes = GNodeUtils.split_node(parent, self.n_child, x_batch,
-                                            base_id=len(self.nodes), fixed=fixed)
+        child_nodes = GNodeUtils.split_node(parent, self.n_child, x_batch, base_id=len(self.nodes), applyPCA = applyPCA, H = H)
+
+        self.nodes.extend(child_nodes)
+        self.split_history.append(parent.id)
+        parent.set_optimizer()
+
+        return child_nodes
+
+    def load_children(self, parent, path):
+        child_nodes = GNodeUtils.load_children(parent, self.n_child, path, base_id = len(self.nodes))
 
         self.nodes.extend(child_nodes)
         self.split_history.append(parent.id)

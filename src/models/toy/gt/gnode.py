@@ -1,40 +1,48 @@
-
 from __future__ import absolute_import
 import pickle
+import time
 from collections import Counter
 
 import numpy as np
 import torch as tr
 from scipy import stats
+from scipy.stats._multivariate import multivariate_normal
+from sklearn.cluster import KMeans
 from sklearn.mixture import GaussianMixture
+from sklearn.decomposition import PCA
+from scipy.spatial import distance
+from termcolor import colored
 from torch import nn, optim
 
 from models import losses
 from models.toy.gan import ToyGAN
-from utils import np_utils, tr_utils, viz_utils
+from trainers.gan_image_trainer import GanImgTrainer
+from utils import np_utils, tr_utils
 from utils.tr_utils import as_np
 from .named_tuples import DistParams
 from trainers.gan_trainer import GanTrainer
 import logging
+import math
+
+from configs import Config
+from utils.decorators import make_tensor, tensorify
 
 ##########  Set Logging  ###########
 logger = logging.getLogger(__name__)
 
 
-# LOG_FORMAT = "[{}: %(filename)s: %(lineno)3s] %(levelname)s: %(funcName)s(): %(message)s".format(ExperimentContext.exp_name)
-# logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
-
-
-class GMM(object):
-    def __init__(self, means, cov, weights):
+class KMeansCltr(object):
+    def __init__(self, means, covs, weights, pred, cluster_centers, pca):
         self.means = means
-        self.cov = cov
+        self.covs = covs
         self.weights = weights
+        self.pred = pred
+        self.cluster_centers = cluster_centers
+        self.pca = pca
 
 
 class LeafNodeException(Exception):
     pass
-
 
 def disallow_leafs(f):
     def inner(self, *args, **kwargs):
@@ -55,17 +63,16 @@ def allow_only_leafs(f):
 
 
 class GNode(nn.Module):
-    trainer = None  # type: GanTrainer
+    trainer = None  # type: GanImgTrainer
     opt_xc = None  # type: optim.Adam
     opt_xr = None  # type: optim.Adam
-    gmm = None  # type: GaussianMixture
+    kmeans = None # type: KMeansClusters
     child_nodes = None  # type: dict[int, GNode]
 
     @staticmethod
     def create_clone(node):
         # type: (GNode) -> GNode
         new_node = GNode(node_id=node.id, model=node.gan)
-        new_node.gmm = node.gmm
         new_node.dist_params = DistParams(*node.dist_params)
         return new_node
 
@@ -78,10 +85,11 @@ class GNode(nn.Module):
         self.child_nodes = {}
         self.__assign_parent(parent)
 
-        self.gmm = None
         self.trainer = None
         self.opt_xr = None
         self.opt_xc = None
+        self.opt_xun = None
+        self.opt_xrecon = None
 
         self.prior_means, self.prior_cov = model.z_op_params
         self.prior_prob = 1.
@@ -123,16 +131,12 @@ class GNode(nn.Module):
         return self.get_child(1)
 
     @property
-    def ellipse(self, color='red', scales=3.0):
-        return viz_utils.get_ellipse(self.prior_means, self.prior_cov, scales=scales, color=color)
+    def all_child(self):
+        return [self.child_nodes[index] for index in self.child_nodes]
 
     @property
     def parent_name(self):
         return 'nullNode' if self.parent is None else self.parent.name
-
-    @property
-    def cluster_probs(self):
-        return self.gmm.weights_
 
     @property
     def dist_params(self):
@@ -148,7 +152,7 @@ class GNode(nn.Module):
     @property
     def tensor_params(self):
         m, s, w, _ = self.dist_params
-        return map(lambda v: tr.tensor(v, dtype=tr.float32), [m, s, w])
+        return map(lambda v: tr.tensor(v, dtype=tr.float32).cuda(), [m, s, w])
 
     def update_dist_params(self, means=None, cov=None, prior_prob=None):
         if means is not None:
@@ -164,10 +168,7 @@ class GNode(nn.Module):
         self.gan.z_op_params = self.prior_means, self.prior_cov
 
     def get_child(self, index):
-        # type: (int) -> GNode
-        """
-        Returns the child of the node at rank `index`
-        """
+        
         return self.child_nodes[self.child_ids[index]]
 
     @property
@@ -176,7 +177,7 @@ class GNode(nn.Module):
 
     @property
     def pre_gmm_decoder(self):
-        return self.gan.decoder
+        return self.gan.generator
 
     @property
     def post_gmm_encoder(self):
@@ -186,66 +187,212 @@ class GNode(nn.Module):
     def post_gmm_decoders(self):
         return [self.get_child(i).pre_gmm_decoder for i in range(self.n_child)]
 
-    def pre_gmm_encode(self, X, transform=False):
-        return self.gan.encode(X, transform)
+    def pre_gmm_encode(self, X, transform=False, batch=128):
+        Z = []
+        n_batches = (X.shape[0] + batch - 1) / batch
+        for i in range(n_batches):
+            Z.append(self.gan.encode(X[i * batch:(i + 1) * batch], transform))
+        Z = np.concatenate(Z)
+        return Z
 
-    def post_gmm_encode(self, X, transform=False):
-        return self.get_child(0).gan.encode(X, transform) if not self.is_leaf else self.gan.encode(X, transform)
+    def post_gmm_encode(self, X, transform=False, batch=128):
+        X = X.cuda()
+        Z = []
+        n_batches = (X.shape[0] + batch - 1) // batch
+        for i in range(n_batches):
+            x = X[i * batch:(i + 1) * batch]
+            z = self.get_child(0).gan.encode(x, transform) if not self.is_leaf else self.gan.encode(x, transform)
+            Z.append(z)
+        Z = np.concatenate(Z)
+        return Z
 
     def pre_gmm_decode(self, Z):
         return self.gan.decoder(Z)
-        # return self.gan.decoder(self.gan.transform(Z))
 
-    def post_gmm_decode(self, Z):
-        preds = self.gmm.predict(as_np((Z)))
+    def gmm_predict_probs(self, Z):
+        priors = [c.prior_prob for c in self.all_child]
+        funcs = [multivariate_normal(c.prior_means, c.prior_cov) for c in self.all_child]
+        probs = np.array([func.pdf(Z) * prior for prior, func in zip(priors, funcs)]).transpose([1, 0])
+        probs = np_utils.prob_dist(probs, axis=-1)
+        return probs
+
+    def gmm_predict(self, Z):
+        left_dist = np.linalg.norm(self.left.prior_means - Z, axis=-1)
+        right_dist = np.linalg.norm(self.right.prior_means - Z, axis=-1)
+        preds = np.where(left_dist <= right_dist, 0, 1)
+        return preds
+
+    def gmm_predict_test(self, Z, threshold = 4):
+
+        preds = np.zeros((len(Z)))
+
+        for i in range(len(Z)):
+            left_dist = distance.mahalanobis(Z[i], self.kmeans.means[0], self.kmeans.covs[0])
+            right_dist = distance.mahalanobis(Z[i], self.kmeans.means[1], self.kmeans.covs[1])
+            if left_dist > threshold and right_dist > threshold:
+                preds[i] = 2
+            elif left_dist < right_dist:
+                preds[i] = 0
+            else:
+                preds[i] = 1
+            
+        return preds
+
+    def post_gmm_decode(self, Z, train = True, training_list = [], with_PCA = False, threshold = 4):
+        if train:
+            preds = self.predict_z(as_np((Z)), training_list = training_list)
+        else:
+            preds = self.gmm_predict_test(as_np(Z), threshold)
+
+        if with_PCA:
+            if train == False or training_list[0] == 0:
+                pcax = PCA(n_components = 3)
+                pcax.fit(Z.detach().cpu().numpy())
+                self.kmeans.pca = pcax
+            
+            pcax = self.kmeans.pca
+            pcamean = tr.Tensor(pcax.mean_).cuda()
+            pcaz = tr.Tensor(pcax.components_).cuda()
+            Z_reduced = tr.matmul(tr.sub(Z, pcamean), tr.transpose(pcaz, 0, 1))
+            Z_recon = tr.matmul(Z_reduced, pcaz) + pcamean
+
+        else:
+            
+            Z_recon = Z
 
         gan0 = self.get_child(0).gan
         gan1 = self.get_child(1).gan
 
-        # x_mode0 = gan0.decoder.forward(gan0.transform.forward(Z))
-        # x_mode1 = gan1.decoder.forward(gan1.transform.forward(Z))
+        x_mode0 = gan0.generator.forward(Z_recon)
+        x_mode1 = gan1.generator.forward(Z_recon)
 
-        x_mode0 = gan0.decoder.forward(Z)
-        x_mode1 = gan1.decoder.forward(Z)
-
-        X = tr.where(tr.tensor(preds[:, None, None, None]) == 0, x_mode0, x_mode1)
+        X = tr.where(tr.tensor(preds[:, None, None, None]).cuda() == 0, x_mode0, x_mode1)
 
         return X, preds
 
-    def fit_gmm(self, X, n_components=2, max_iter=100, warm_start=True, Z=None):
-        if self.gmm is None or warm_start == False:
-            self.gmm = GaussianMixture(n_components=n_components, max_iter=max_iter, warm_start=False)
-        else:
-            self.gmm = GaussianMixture(n_components=n_components, max_iter=max_iter, means_init=self.gmm.means_,
-                                       precisions_init=self.gmm.precisions_, weights_init=self.gmm.weights_)
 
-        Z = self.post_gmm_encode(X, transform=False) if Z is None else Z
-        # print(Z.shape)
-        self.gmm.fit(Z)
+    def init_child_params(self, X, n_components = 2, Z=None, fixed_sigma=True, applyPCA = False, H = None):
+        dmu = H.dmu
+        value = 0.5 * dmu / math.sqrt(H.z_dim)
+
+        if Z is None:
+            Z = self.post_gmm_encode(X, transform=False)
+        
+
+        if applyPCA:
+        
+            pcakmeans = PCA(n_components = 42)
+            pcakmeans.fit(Z)
+            Z_reduced = pcakmeans.transform(Z)
+
+        else:
+            Z_reduced = np.asarray(Z)
+
+        kmeans = KMeans(n_components, max_iter=1000)
+
+        p = kmeans.fit_predict(Z_reduced)
+
+
+        means1 = [self.prior_means[i] + value for i in range(H.z_dim)]
+        means2 = [self.prior_means[i] - value for i in range(H.z_dim)]
+
+        means = np.asarray([means1, means2])
+
+        covs = [None for i in range(n_components)]
+        weights = [None for i in range(n_components)]
+
+        for i in range(n_components):
+            Z_temp = Z[np.where(p == i)]
+            covs[i] = np.eye(Z.shape[-1]) if fixed_sigma else np.cov(Z_temp.T)
+            weights[i] = (1.0* len(Z_temp))/len(Z)
+
+        self.kmeans = KMeansCltr(means, covs, weights, p, kmeans.cluster_centers_, None)
+
+
+    def update_child_params(self, X, Z=None, max_iter = 20, fixed_sigma=True, applyPCA = True):
+        if Z is None:
+            Z = self.post_gmm_encode(X, transform=False)
+        
+        if applyPCA:
+
+            pcakmeans = PCA(n_components = 42)
+            pcakmeans.fit(Z)
+            Z_reduced = pcakmeans.transform(Z)
+
+        else:
+
+            Z_reduced = Z
+
+        # initialize from previous means
+        kmeans = KMeans(self.n_child, init = np.array(self.kmeans.cluster_centers), max_iter=max_iter)
+
+
+        # initialize new kmeans
+        # kmeans = KMeans(self.n_child, max_iter=max_iter)
+
+        p = kmeans.fit_predict(Z_reduced)
+
+        print(p.shape)
+
+        self.kmeans.pred = p
+
+        means = [None for i in range(self.n_child)]
+        covs = [None for i in range(self.n_child)]
+        weights = [None for i in range(self.n_child)]
+
         for i in range(self.n_child):
-            self.get_child(i).update_dist_params(self.gmm.means_[i], self.gmm.covariances_[i], self.gmm.weights_[i])
+            Z_temp = Z[np.where(p == i)]
+            means[i] = np.mean(Z_temp, axis=0)
+            covs[i] = np.eye(Z.shape[-1]) if fixed_sigma else np.cov(Z_temp.T)
+            weights[i] = (1.0* len(Z_temp))/len(Z)
+
+        print(weights)
+
+        similar_dist = np.linalg.norm(means[0] - self.kmeans.means[0]) + np.linalg.norm(means[1] - self.kmeans.means[1])
+        cross_dist = np.linalg.norm(means[1] - self.kmeans.means[0]) + np.linalg.norm(means[0] - self.kmeans.means[1])
+
+        if similar_dist < cross_dist:
+            print("sim")
+            for i in range(self.n_child):
+                self.get_child(i).update_dist_params(means[i], covs[i], weights[i])
+                self.kmeans.means[i] = means[i]
+                self.kmeans.covs[i] = covs[i]
+                self.kmeans.weights[i] = weights[i]
+                self.kmeans.cluster_centers[i] = kmeans.cluster_centers_[i]
+        else:
+            print("diff")
+            for i in range(self.n_child):
+                self.get_child(i).update_dist_params(means[1-i], covs[1-i], weights[1-i])
+                self.kmeans.means[i] = means[1-i]
+                self.kmeans.covs[i] = covs[1-i]
+                self.kmeans.weights[i] = weights[1-i]
+                self.kmeans.pred = 1 - p
+                self.kmeans.cluster_centers[i] = kmeans.cluster_centers_[1-i]
+
+        return (similar_dist - cross_dist)
+
 
     def save(self, file):
         pickle_data = {
             'id': self.id,
-            'gmm': self.gmm,
             'dist_params': self.dist_params,
             'state_dict': self.state_dict(),
-            'name': self.name
+            'name': self.name,
+            'kmeans': self.kmeans
         }
-        with open(file, 'w') as fp:
+        with open(file, 'wb') as fp:
             pickle.dump(pickle_data, fp)
 
     @classmethod
     def load(cls, file, gnode=None, Model=None, strict=False):
-        with open(file) as fp:
+        with open(file, 'rb') as fp:
             pickle_dict = pickle.load(fp)
 
         node_id = pickle_dict['id']
         name = pickle_dict.get('name', '')
-        gmm = pickle_dict['gmm']
+        kmeans = pickle_dict['kmeans']
         node = gnode or GNode(node_id, Model(name, 2, ))
-        node.gmm = gmm
+        node.kmeans = kmeans
         node.load_state_dict(pickle_dict['state_dict'], strict=strict)
         node.dist_params = pickle_dict['dist_params']
         return node
@@ -270,10 +417,6 @@ class GNode(nn.Module):
             cov.append(node.prior_cov)
             weights.append(node.prior_prob)
 
-        self.gmm.means_ = np.array(means, dtype='float32')
-        self.gmm.covariances_ = np.array(cov, dtype='float32')
-        self.gmm.weights_ = np.array(weights, dtype='float32')
-
     def remove_child(self, child_id):
         self.child_ids.remove(child_id)
         del self.child_nodes[child_id]
@@ -290,13 +433,15 @@ class GNode(nn.Module):
         encoder_params = list(self.post_gmm_encoder.parameters())
         decoders = self.post_gmm_decoders
         decoder_params = list(decoders[0].parameters()) + list(decoders[1].parameters())
-        self.opt_xc = optim.Adam(encoder_params + decoder_params)
-        self.opt_xr = optim.Adam(decoder_params)
+        self.opt_xassigned = optim.Adam(encoder_params + decoder_params)
+        self.opt_xunassigned = optim.Adam(encoder_params + decoder_params)
+        self.opt_xrecon = optim.Adam(encoder_params + decoder_params)
 
     def train(self, *args, **kwargs):
         self.trainer.train(*args, **kwargs)
 
-    def step_train_x_clf(self, x_batch, clip=0.0):
+    def step_train_x_clf_phase1(self, x_batch, training_list = [], clip=0.0, frozenLabels = True, with_PCA = False, threshold = 4):
+
         id1, id2 = self.child_ids
 
         node1 = self.child_nodes[id1]
@@ -307,72 +452,162 @@ class GNode(nn.Module):
 
         z_batch = self.post_gmm_encoder.forward(x_batch)
 
-        x_recon, preds = self.post_gmm_decode(z_batch)
+        x_recon, preds = self.post_gmm_decode(z_batch, train = True, training_list = training_list, with_PCA = with_PCA, threshold = threshold)
 
-        x_clf_loss = tr.max(tr.tensor(clip), losses.x_clf_loss(mu1, cov1, w1, mu2, cov2, w2, z_batch))
+
+        if len(z_batch[np.where(preds != 2)]) == 0:
+            x_clf_loss_assigned = 0
+        else:
+            x_clf_loss_assigned = tr.max(tr.tensor(clip).cuda(), losses.x_clf_loss_assigned(mu1, cov1, w1, mu2, cov2, w2, z_batch[np.where(preds != 2)], preds[np.where(preds != 2)]))
+        
+
+        if len(z_batch[np.where(preds == 2)]) == 0:
+            x_clf_loss_unassigned = 0
+        else:
+            x_clf_loss_unassigned = tr.max(tr.tensor(clip).cuda(), losses.x_clf_loss_unassigned(mu1, cov1, w1, mu2, cov2, w2, z_batch[np.where(preds == 2)], preds[np.where(preds == 2)]))
+
+
+        x_clf_cross_loss = tr.max(tr.tensor(clip).cuda(), losses.x_clf_cross_loss(mu1, cov1, w1, mu2, cov2, w2, z_batch, preds))
+
 
         batch_size = x_recon.shape[0]
-
         x_loss_vector = tr.sum((x_recon.view([batch_size, -1]) - x_batch.view([batch_size, -1])) ** 2, dim=-1)
 
+
         c = Counter([a for a in preds])
-        weights = tr.Tensor([
+
+        weights_unassigned = tr.Tensor([
+            0,
+            0,
+            1.0 / np.maximum(c[2], 1e-9)
+        ]).cuda()[preds]
+
+        weights_assigned = tr.Tensor([
             1.0 / np.maximum(c[0], 1e-9),
-            1.0 / np.maximum(c[1], 1e-9)
-        ])[preds]
+            1.0 / np.maximum(c[1], 1e-9),
+            0
+        ]).cuda()[preds]
 
-        x_recon_loss = tr.sum(x_loss_vector * weights)
+        
 
-        _, cov = tr_utils.mu_cov(z_batch)
+        x_unassigned_recon_loss = 1e-2 * tr.sum(x_loss_vector * weights_unassigned)
+        x_assigned_recon_loss = 1e-2 * tr.sum(x_loss_vector * weights_assigned)
 
-        _, sigmas, _ = tr.svd(cov)
 
-        sig_sv1 = tr.clamp(tr.svd(cov1)[1], 1e-5) ** 2
-        sig_sv2 = tr.clamp(tr.svd(cov2)[1], 1e-5) ** 2
+        loss_assigned = x_assigned_recon_loss + x_clf_loss_assigned
+        loss_unassigned = x_unassigned_recon_loss + x_clf_loss_unassigned
 
-        loss_cov1 = tr.sum(1 / sig_sv1)
-        loss_cov2 = tr.sum(1 / sig_sv2)
 
-        # print('cov2 loss ', loss_cov2, 'conv1 loss ', loss_cov1)
-        loss = x_recon_loss + 100.0 * x_clf_loss + 1e-4 * (tr.sum(sig_sv1) + tr.sum(sig_sv2) + loss_cov1 + loss_cov2)
+        loss_recon = x_assigned_recon_loss + x_unassigned_recon_loss
 
-        self.opt_xc.zero_grad()
-        loss.backward(retain_graph=True)
-        self.opt_xc.step()
 
-        return z_batch, x_recon, x_recon_loss, x_clf_loss, loss , loss_cov1,loss_cov2
+        loss = loss_recon + x_clf_loss_assigned + x_clf_loss_unassigned
 
-    def step_train_x_clf_fixed(self, x_batch_left, x_batch_right, clip=0.0):
 
-        mu1, cov1, w1 = self.left.tensor_params
-        mu2, cov2, w2 = self.right.tensor_params
+        self.opt_xassigned.zero_grad()
+        loss_assigned.backward(retain_graph=True)
+        self.opt_xassigned.step()
 
-        z_batch_left = self.post_gmm_encoder.forward(x_batch_left)
-        z_batch_right = self.post_gmm_encoder.forward(x_batch_right)
+        self.opt_xunassigned.zero_grad()
+        loss_unassigned.backward(retain_graph = True)
+        self.opt_xunassigned.step()
 
-        x_recon_left = self.left.gan.decoder(z_batch_left)
-        x_recon_right = self.right.gan.decoder(z_batch_right)
+        return z_batch, x_recon, preds, x_clf_loss_assigned, x_assigned_recon_loss, loss_assigned, x_clf_loss_unassigned, x_unassigned_recon_loss, loss_unassigned, x_clf_cross_loss, loss_recon
 
-        x_clf_loss = tr.max(tr.tensor(clip), losses.x_clf_loss_fixed(mu1, cov1, w1, mu2, cov2, w2, z_batch_left, z_batch_right))
+    def reassignLabels(self, X, threshold):
+        Z = self.post_gmm_encode(X, transform = False)
 
-        x_recon_loss_left = tr.sum((x_recon_left - x_batch_left) ** 2, dim=-1).mean()
-        x_recon_loss_right = tr.sum((x_recon_right - x_batch_right) ** 2, dim=-1).mean()
-        x_recon_loss = x_recon_loss_left + x_recon_loss_right
+        preds = self.kmeans.pred
 
-        # _, cov_left = tr_utils.mu_cov(z_batch_left)
-        # _, sigmas_left, _ = tr.svd(cov_left)
-        #
-        # _, cov_right = tr_utils.mu_cov(z_batch_right)
-        # _, sigmas_right, _ = tr.svd(cov_right)
+        for i in range(len(preds)):
+            if (distance.mahalanobis(Z[i], self.kmeans.means[0], self.kmeans.covs[0]) > threshold) and (distance.mahalanobis(Z[i], self.kmeans.means[1], self.kmeans.covs[1]) > threshold):
+                preds[i] = 2
 
-        # Don't need regularization, since mu, cov are freezed
-        loss = x_recon_loss + x_clf_loss  # + 1e-5 * tr.sum(sigmas_left ** 2)
+        self.kmeans.pred = preds
 
-        self.opt_xc.zero_grad()
-        loss.backward(retain_graph=True)
-        self.opt_xc.step()
+    def updatePredictions(self, x_batch, training_list, threshold):
+        z_batch_update = self.post_gmm_encoder.forward(x_batch)
 
-        return x_recon_loss, x_clf_loss, loss
+        x_recon, preds_update = self.post_gmm_decode(z_batch_update, train = True, training_list = training_list, with_PCA = False)
+
+        for i in range(len(preds_update)):
+            dis0 = distance.mahalanobis(z_batch_update.detach().cpu().numpy()[i], self.kmeans.means[0], self.kmeans.covs[0])
+            dis1 = distance.mahalanobis(z_batch_update.detach().cpu().numpy()[i], self.kmeans.means[1], self.kmeans.covs[1])
+
+            if preds_update[i] == 2:
+                if (dis0 < dis1) and (dis0 < threshold):
+                    preds_update[i] = 0
+                elif (dis0 > dis1) and (dis1 < threshold):
+                    preds_update[i] = 1
+
+        self.kmeans.pred[training_list] = preds_update
+
+  
+    def step_predict_test(self, x_batch, clip=0.0, with_PCA = False, threshold = 4):
+        
+        with tr.no_grad():
+            id1, id2 = self.child_ids
+
+            node1 = self.child_nodes[id1]
+            node2 = self.child_nodes[id2]
+
+            mu1, cov1, w1 = node1.tensor_params
+            mu2, cov2, w2 = node2.tensor_params
+
+            z_batch = self.post_gmm_encoder.forward(x_batch)
+
+            x_recon, preds = self.post_gmm_decode(z_batch, train = False, with_PCA = with_PCA, threshold = threshold)
+
+
+            if len(z_batch[np.where(preds != 2)]) == 0:
+                x_clf_loss_assigned = 0
+            else:
+                x_clf_loss_assigned = tr.max(tr.tensor(clip).cuda(), losses.x_clf_loss_assigned(mu1, cov1, w1, mu2, cov2, w2, z_batch[np.where(preds != 2)], preds[np.where(preds != 2)]))
+            
+
+            if len(z_batch[np.where(preds == 2)]) == 0:
+                x_clf_loss_unassigned = 0
+            else:
+                x_clf_loss_unassigned = losses.x_clf_loss_unassigned(mu1, cov1, w1, mu2, cov2, w2, z_batch[np.where(preds == 2)], preds[np.where(preds == 2)])
+
+
+            x_clf_cross_loss = tr.max(tr.tensor(clip).cuda(), losses.x_clf_cross_loss(mu1, cov1, w1, mu2, cov2, w2, z_batch, preds))
+
+
+            batch_size = x_recon.shape[0]
+            x_loss_vector = tr.sum((x_recon.view([batch_size, -1]) - x_batch.view([batch_size, -1])) ** 2, dim=-1)
+
+            c = Counter([a for a in preds])
+            weights = tr.Tensor([
+                1.0 / np.maximum(c[0], 1e-9),
+                1.0 / np.maximum(c[1], 1e-9),
+                1.0 / np.maximum(c[2], 1e-9)
+            ]).cuda()[preds]
+
+            weights_unassigned = tr.Tensor([
+                0,
+                0,
+                1.0 / np.maximum(c[2], 1e-9)
+            ]).cuda()[preds]
+
+            weights_assigned = tr.Tensor([
+                1.0 / np.maximum(c[0], 1e-9),
+                1.0 / np.maximum(c[1], 1e-9),
+                0
+            ]).cuda()[preds]
+
+            x_unassigned_recon_loss = 1e-2 * tr.sum(x_loss_vector * weights_unassigned)
+
+            x_assigned_recon_loss = 1e-2 * tr.sum(x_loss_vector * weights_assigned)
+
+            loss_recon = 1e-2 * tr.sum(x_loss_vector * weights)
+
+            loss_assigned = x_assigned_recon_loss + x_clf_loss_assigned
+            loss_unassigned = x_unassigned_recon_loss + x_clf_loss_unassigned
+
+
+        return preds, x_clf_loss_assigned, x_assigned_recon_loss, loss_assigned, x_clf_loss_unassigned, x_unassigned_recon_loss, loss_unassigned, x_clf_cross_loss, loss_recon
+
 
     def set_train_flag(self, mode):
         super(GNode, self).train(mode)
@@ -385,31 +620,20 @@ class GNode(nn.Module):
         Z = self.gan.encode(X)
         return np.mean(self.pdf(Z))
 
-    def sample_z_batch(self, n_samples=1):
-        array = np.random.multivariate_normal(self.prior_means, self.prior_cov, n_samples)
-        return tr.Tensor(array)
-
-    def sample_restricted_z_batch(self, n_samples=1, prob_threshold=0.02):
-        batch = self.sample_z_batch(n_samples * 10)
-        batch = self.filter_z(batch, prob_threshold)
-        batches, _ = self.split_z(batch)
-        reduce = lambda batch: np_utils.random_select(batch, n_samples) if len(batch) > n_samples else batch
-        # batches = map(reduce, map(lambda i: batches[i], self.child_ids))
-        return {k: reduce(batch) for k, batch in batches.items()}
-
     def sample_x_batch(self, n_samples=1):
         z_batch = self.sample_z_batch(n_samples)
         return self.gan.decode(x)
 
-    def predict_z(self, Z, probs=False):
+    def predict_z(self, Z, training_list = [], probs=False):
         if Z.shape[0] == 0:
             return np.array([])
-        if probs:
-            P = self.gmm.predict_proba(Z)
+        if probs:    
+            P = self.kmeans.pred[training_list]
             return P
-        Y = self.gmm.predict(Z)
-        # Y = np.where(Z[:, 0] + Z[:, 1] >= 0, 0, 1)
-        Y = np.array([self.child_ids[y] for y in Y])
+
+        
+        Y = self.kmeans.pred[training_list]
+
         return Y
 
     def predict_x(self, X, probs=False):
@@ -419,49 +643,30 @@ class GNode(nn.Module):
         return self.predict_z(Z, probs)
 
     def split_z(self, Z):
-        """
-        :param Z: np.ndarray of shape [B, F]
-        :return:
-
-        z_splits: {
-            label : np.ndarray of shape [Bl, F]
-        }
-
-        """
-        Y = self.predict_z(Z)
+        Y = self.gmm_predict(Z)
         labels = self.child_ids
         R = np.arange(Z.shape[0])
-        z_splits = {l: Z[np.where(Y == l)] for l in labels}
-        i_splits = {l: R[np.where(Y == l)] for l in labels}
+
+        z_splits = {labels[l]: Z[np.where(Y == l)] for l in range(len(labels))}
+        i_splits = {labels[l]: R[np.where(Y == l)] for l in range(len(labels))}
+
         return z_splits, i_splits
 
     def encoder_helper(self, X):
         samples = X.shape[0]
-        iter = samples // 256
+        iter = (samples // 256) + 1
         z = tr.tensor([])
         for idx in range(iter):
-            tempz = self.post_gmm_encode(X[(idx) * 256:(idx + 1) * 256])
+            if idx < iter - 1:
+                tempz = tr.from_numpy(self.post_gmm_encode(X[(idx) * 256:(idx + 1) * 256])) 
+            else:
+                tempz = tr.from_numpy(self.post_gmm_encode(X[(idx) * 256:]))
+
             z = tr.cat((z, tempz), 0)
 
         return z
 
     def split_x(self, X, Z_flag=False):
-
         Z = self.post_gmm_encode(X) if not Z_flag else self.encoder_helper(X)
-        z_splits, i_splits = self.split_z(Z)
-        x_splits = {l: X[i_split] for l, i_split in i_splits.items()}
-        return x_splits, i_splits
-
-    def filter_i(self, Z, prob_threshold):
-        probs = self.predict_z(Z, probs=True)
-        indices = np.where(probs.min(axis=-1) < prob_threshold)
-        return indices
-
-    def filter_z(self, Z, prob_threshold):
-        indices = self.filter_i(Z, prob_threshold)
-        return Z[indices]
-
-    def filter_x(self, X, prob_threshold):
-        Z = self.post_gmm_encode(X)
-        indices = self.filter_i(Z, prob_threshold)
-        return X[indices]
+        _, i_splits = self.split_z(Z)
+        return i_splits

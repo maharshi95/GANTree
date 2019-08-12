@@ -1,207 +1,100 @@
-# # from __future__ import print_function
-
 import torch as tr
 from torch import nn
-from torch.nn.parameter import Parameter
 from torch.nn import functional as F
+import numpy as np
 from base.hyperparams import Hyperparams
 from exp_context import ExperimentContext
-
-from modules.commons import NLinear, ConvBlock
 from base.model import BaseModel
+from torch.autograd import Variable
 
 H = ExperimentContext.Hyperparams  # type: Hyperparams
 
 
-class UpConvBlock(nn.Sequential):
-    def __init__(self, in_channels, out_channels, bn=True, kernel_size=5, stride=2, output_padding=(0, 0), padding=(2, 2)):
-        layers = [nn.ConvTranspose2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding,
-                                     output_padding=output_padding)]
-        if bn:
-            layers.append(nn.BatchNorm2d(out_channels, 0.8))
-        layers.append(nn.LeakyReLU(0.2, inplace=True))
+def reparameterization(mu, logvar, z_dim):
+    std = tr.exp(logvar / 2)
+    sampled_z = Variable(tr.Tensor(np.random.normal(0, 1, (mu.size(0), z_dim)))).cuda()
+    z = sampled_z * std + mu
+    return z
 
-        super(UpConvBlock, self).__init__(*layers)
+class Generator(BaseModel):
+    # initializers
+    def __init__(self, z_dim, channel, d=128):
+        super(Generator, self).__init__()
 
+        self.z_dim = z_dim
 
-class ImgEncoder(BaseModel):
-    def __init__(self, z_size, out_scale=4.0):
-        super(ImgEncoder, self).__init__()
-
-        self._np_out_scale = out_scale
-        self.z_size = z_size
-
-        self.out_scale = Parameter(tr.tensor(out_scale), requires_grad=False)
-
-        # 1  * 28 x 28
-        self.conv1 = ConvBlock(1, 32, kernel_size=5, stride=1, padding='same')
-        # 32 * 28 x 28
-        self.conv2 = ConvBlock(32, 64, kernel_size=5, stride=2, padding='same')
-        # 64 * 14 x 14
-        self.conv3 = ConvBlock(64, 128, kernel_size=5, stride=2, padding='same')
-        # 128 * 7 x 7
-        self.conv4 = ConvBlock(128, 256, kernel_size=5, stride=2, padding='same')
-        # 256 * 4 x 4
-        self.fc1 = nn.Linear(256 * (4 * 4), 200)
-        # 200
-        self.fc2 = nn.Linear(200, z_size)
-        # z_size
+        self.deconv1 = nn.ConvTranspose2d(z_dim, d*8, 4, 1, 0)
+        self.deconv1_bn = nn.BatchNorm2d(d*8)
+        self.deconv2 = nn.ConvTranspose2d(d*8, d*4, 4, 2, 1)
+        self.deconv2_bn = nn.BatchNorm2d(d*4)
+        self.deconv3 = nn.ConvTranspose2d(d*4, d*2, 4, 2, 1)
+        self.deconv3_bn = nn.BatchNorm2d(d*2)
+        self.deconv4 = nn.ConvTranspose2d(d*2, d, 4, 2, 1)
+        self.deconv4_bn = nn.BatchNorm2d(d)
+        self.deconv5 = nn.ConvTranspose2d(d, channel, 4, 2, 1)
 
         self.init_params()
 
+    # forward method
     def forward(self, x):
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.conv4(x)
-        x = x.view(x.shape[0], -1)
-        x = self.fc1(x)
-        x = F.leaky_relu(x)
+        x = F.relu(self.deconv1_bn(self.deconv1(x.view(-1, self.z_dim, 1, 1))))
+        x = F.relu(self.deconv2_bn(self.deconv2(x)))
+        x = F.relu(self.deconv3_bn(self.deconv3(x)))
+        x = F.relu(self.deconv4_bn(self.deconv4(x)))
+        x = F.tanh(self.deconv5(x))
 
-        x = self.fc2(x)
-        z = self.out_scale * tr.tanh(x / self.out_scale)
+        return x
+
+class Encoder(BaseModel):
+    # initializers
+    def __init__(self, z_dim, channel, d=128):
+        super(Encoder, self).__init__()
+        self.z_dim = z_dim
+
+        self.conv1 = nn.Conv2d(channel, d, 4, 2, 1)
+        self.conv2 = nn.Conv2d(d, d*2, 4, 2, 1)
+        self.conv2_bn = nn.BatchNorm2d(d*2)
+        self.conv3 = nn.Conv2d(d*2, d*4, 4, 2, 1)
+        self.conv3_bn = nn.BatchNorm2d(d*4)
+        self.conv4 = nn.Conv2d(d*4, d*8, 4, 2, 1)
+        self.conv4_bn = nn.BatchNorm2d(d*8)
+        self.conv5_mu = nn.Conv2d(d*8, z_dim, 4, 1, 0)
+        self.conv5_var = nn.Conv2d(d*8, z_dim, 4, 1, 0)
+
+        self.init_params()
+
+    # forward method
+    def forward(self, x):
+        x = F.leaky_relu(self.conv1(x), 0.2)
+        x = F.leaky_relu(self.conv2_bn(self.conv2(x)), 0.2)
+        x = F.leaky_relu(self.conv3_bn(self.conv3(x)), 0.2)
+        x = F.leaky_relu(self.conv4_bn(self.conv4(x)), 0.2)
+
+        mu = self.conv5_mu(x)
+        var = self.conv5_var(x)
+        
+        z = reparameterization(mu.view(-1, self.z_dim), var.view(-1, self.z_dim), self.z_dim)
+    
         return z
 
-    def copy(self, *args, **kwargs):
-        return super(ImgEncoder, self).copy(self.z_size,out_scale=self._np_out_scale)
+class Discriminator(BaseModel):
+    def __init__(self, z_dim):
+        super(Discriminator, self).__init__()
 
-    @property
-    def z_bounds(self):
-        return self._np_out_scale
-
-
-class ImgDecoder(BaseModel):
-    def __init__(self, z_size, out_scale=4.0):
-        """
-        Using Padding Formula output = (input - 1) * stride - 2 * padding + kernel + output_padding
-        """
-        self.z_size = z_size
-        super(ImgDecoder, self).__init__()
-
-        self._np_out_scale = out_scale
-        self.out_scale = Parameter(tr.tensor(out_scale), requires_grad=False)
-
-        self.fc1 = nn.Linear(z_size, 200)
-        self.fc2 = nn.Linear(200, 4 * 4 * 128)
-
-        # 128 * 4 * 4
-        self.tconv1 = UpConvBlock(128, 64, kernel_size=5, stride=2)
-        # 64 * 7 * 7
-        self.tconv2 = UpConvBlock(64, 32, kernel_size=5, stride=2, output_padding=(1, 1))
-        # 32 * 14 * 14
-        self.tconv3 = UpConvBlock(32, 16, kernel_size=5, stride=1)
-        # 16 * 14 * 14
-        self.tconv4 = UpConvBlock(16, 1, kernel_size=5, stride=2, output_padding=(1, 1))
-        # 1 * 28 * 28
-        self.init_params()
-
-    @property
-    def z_bounds(self):
-        return self._np_out_scale
-
-    def forward(self, z):
-        z = self.fc1(z)
-        z = F.leaky_relu(z)
-
-        z = self.fc2(z)
-        z = z.view(z.shape[0], 128, 4, 4)
-
-        z = self.tconv1(z)
-        z = self.tconv2(z)
-        z = self.tconv3(z)
-        z = self.tconv4(z)
-        z = tr.tanh(z)
-        return z
-
-    def copy(self, *args, **kwargs):
-        return super(ImgDecoder, self).copy(self.z_size,out_scale=self._np_out_scale)
-
-
-class ImgDiscx(BaseModel):
-    def __init__(self, n_batch_logits):
-        super(ImgDiscx, self).__init__()
-
-        self.n_batch_logits = n_batch_logits
-
-        # 1  * 28 x 28
-        self.conv1 = ConvBlock(1, 32, kernel_size=5, stride=1, padding='same')
-        # 32 * 28 x 28
-        self.conv2 = ConvBlock(32, 64, kernel_size=5, stride=2, padding='same')
-        # 64 * 14 x 14
-        self.conv3 = ConvBlock(64, 128, kernel_size=5, stride=2, padding='same')
-        # 128 * 7 x 7
-        self.conv4 = ConvBlock(128, 256, kernel_size=5, stride=2, padding='same')
-        # 256 * 4 x 4
-        self.fc1 = nn.Linear(256 * (4 * 4), 100)
-
-        self.sample_logit_block = NLinear(100, [32, 32, 1])
-
-        self.fc2 = nn.Linear(100, 32)
-
-        self.batch_logit_block = NLinear(32 * n_batch_logits, [32, 32, 1])
-
-        self.init_params()
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.conv4(x)
-
-        x = x.view(x.size(0), -1)
-
-        common_layer = self.fc1(x)
-
-        sample_logits = self.sample_logit_block(common_layer)
-
-        batch_units_branch = self.fc2(common_layer)
-        batch_units_layer = batch_units_branch.view(-1, self.n_batch_logits * 32)
-
-        batch_logits = self.batch_logit_block(batch_units_layer)
-
-        return sample_logits, batch_logits
-
-    def discriminate(self, x):
-        with tr.no_grad():
-            sample_logits, _ = self.forward(x)
-            preds = sample_logits >= 0.
-            return preds[:, 0]
-
-    def copy(self, *args, **kwargs):
-        return super(ImgDiscx, self).copy(n_batch_logits=self.n_batch_logits)
-
-
-class ImgDiscz(BaseModel):
-    def __init__(self, n_batch_logits):
-        super(ImgDiscz, self).__init__()
-        self._np_n_batch_logits = n_batch_logits
-
-        self._np_n_batch_logits = n_batch_logits
-        self.n_common_features = 32
-
-        self.n_batch_logits = Parameter(tr.tensor(n_batch_logits), requires_grad=False)
-
-        self.common_block = NLinear(H.z_size, [16, 32, 64, 128, self.n_common_features], act=nn.ELU)
-
-        self.sample_logit_block = NLinear(self.n_common_features, [32, 64, 32, 16, 1])
-        self.batch_logit_block = NLinear(self.n_common_features * n_batch_logits, [32, 64, 32, 16, 1])
+        self.z_dim = z_dim
+        
+        self.fc1 = nn.Linear(z_dim, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.fc3 = nn.Linear(256, 1)
+        self.activation = nn.Sigmoid()
 
         self.init_params()
 
     def forward(self, z):
-        inter = self.common_block(z)
-        inter_view = inter.view(-1, self.n_common_features * self.n_batch_logits)
-
-        sample_logits = self.sample_logit_block(inter)
-        batch_logits = self.batch_logit_block(inter_view)
-
-        return sample_logits, batch_logits
-
-    def discriminate(self, z):
-        with tr.no_grad():
-            sample_logits, _ = self.forward(z)
-            preds = sample_logits >= 0.
-            return preds[:, 0]
-
-    def copy(self, *args, **kwargs):
-        return super(ImgDiscz, self).copy(n_batch_logits=self.n_batch_logits)
+        z = F.leaky_relu(self.fc1(z), 0.2)
+        z = F.leaky_relu(self.fc2(z), 0.2)
+        z = self.fc3(z)
+        
+        validity = self.activation(z)
+        
+        return validity

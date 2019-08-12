@@ -46,48 +46,85 @@ class GNodeUtils:
         return new_node
 
     @staticmethod
-    def split_node(parent, n_child, x_batch, base_id, fixed=False):
+    def split_node(parent, n_child, x_batch, base_id, applyPCA = True, H = None):
         # type: (GNode, int, np.ndarray, int, bool) -> list[GNode]
 
-        # logger.info('Starting Split Process: %s' % parent)
-        parent.fit_gmm(x_batch, max_iter=10)
+        n_dim = parent.prior_means.shape[-1]
+
+        logger.info('Starting Split Process: %s' % parent)
+        
+        parent.init_child_params(x_batch, n_components = 2, applyPCA = applyPCA, H = H)
+    
         child_nodes = []
 
-        # gan_models = GNodeUtils.split_models(parent.gan, n_child, fixed=fixed)
-
         Model = parent.gan.__class__
-        n_dim = parent.prior_means.shape[-1]
-        # logger.info('n_dim created')
-        common_encoder = parent.gan.encoder.copy()
-        # logger.info('common_encoder created')
+
+        common_encoder = parent.gan.encoder.copy(n_dim, parent.gan.channel)
+
         for i_child in range(n_child):
             node_id = base_id + i_child
             model_name = "node%d" % node_id
-            logger.info('child id:%d'% i_child)
+            logger.info('child id:%d' % i_child)
 
-            if fixed:
-                means = np.ones(n_dim) * 3.0 * np.power(-1, i_child)
-                cov = np.eye(n_dim)
-            else:
-                means = parent.gmm.means_[i_child]
-                cov = parent.gmm.covariances_[i_child]
+            
+            means = parent.kmeans.means[i_child]
+            cov = parent.kmeans.covs[i_child]
 
-            # logger.info('alalal')
-            child_model = Model(name=model_name,
-                                z_op_params=(tr.Tensor(means), tr.Tensor(cov)),
-                                encoder=common_encoder,
-                                decoder=parent.gan.decoder.copy(),
-                                disc_x=parent.gan.disc_x.copy(),
-                                disc_z= None,)
-                                # TODO
-                                # disc_z=parent.gan.disc_z.copy(), )
 
-            # logger.info('child created:%d'%i_child)
-            # z_bounds=parent.gan.z_bounds)
+            child_model = Model(name = model_name,
+                                z_op_params = (tr.Tensor(means), tr.Tensor(cov)),
+                                encoder = common_encoder,
+                                generator = parent.gan.generator.copy(n_dim, parent.gan.channel),
+                                discriminator = parent.gan.discriminator.copy(n_dim)
+                                )
+            
 
-            cond_prob = parent.cluster_probs[i_child]
+            cond_prob = parent.kmeans.weights[i_child]
+
             prob = parent.prob * cond_prob
             child_node_params = DistParams(means, cov, cond_prob, prob)
             child_node = GNodeUtils.create_child_node(node_id, child_node_params, child_model, parent)
             child_nodes.append(child_node)
+
+        return child_nodes
+
+    @staticmethod
+    def load_children(parent, n_child, path, base_id):
+        # type: (GNode, int, np.ndarray, int, bool) -> list[GNode]
+
+        n_dim = parent.prior_means.shape[-1]
+
+        logger.info('Starting Loading Process: %s' % parent)
+            
+        child_nodes = []
+
+        Model = parent.gan.__class__
+
+        common_encoder = parent.gan.encoder.copy(n_dim, parent.gan.channel)
+
+        for i_child in range(n_child):
+            node_id = base_id + i_child
+            model_name = "node%d" % node_id
+            logger.info('child id:%d' % i_child)
+            
+            means = parent.kmeans.means[i_child]
+            cov = parent.kmeans.covs[i_child]
+
+
+            child_model = Model(name = model_name,
+                                z_op_params = (tr.Tensor(means), tr.Tensor(cov)),
+                                encoder = common_encoder,
+                                generator = parent.gan.generator.copy(n_dim,  parent.gan.channel),
+                                discriminator = parent.gan.discriminator.copy(n_dim)
+                                )
+            
+
+            cond_prob = parent.kmeans.weights[i_child]
+
+            prob = parent.prob * cond_prob
+            child_node_params = DistParams(means, cov, cond_prob, prob)
+            child_node = GNodeUtils.create_child_node(node_id, child_node_params, child_model, parent)
+            child_node = GNode.load(path + str(i_child) + '_mnist_phase_1_2.pickle', child_node)
+            child_nodes.append(child_node)
+
         return child_nodes

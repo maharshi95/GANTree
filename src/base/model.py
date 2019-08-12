@@ -46,28 +46,36 @@ class BaseModel(nn.Module):
     def get_params_dir_path(self, weight_label):
         return Paths.get_params_dir_path(weight_label, self.name)
 
-    # def get_logs_dir_path(self, weight_label):
-    #     return Paths.get_params_dir_path(weight_label, self.name)
-    #
     def get_log_writer_path(self, writer_name):
         return Paths.log_writer_path(writer_name, self.name)
 
     def create_params_dir(self):
         bash_utils.create_dir(self.get_params_dir_path('iter'))
-        bash_utils.create_dir(self.get_params_dir_path('best'))
-        # bash_utils.create_dir(self.get_logs_writer_path('train'))
-        # bash_utils.create_dir(self.get_logs_writer_path('test'))
 
     def save_params(self, dir_name, weight_label, iter_no=None):
-        state_dict = self.state_dict()
+        state_dict = {'iteration': iter_no,
+                      'state_dict': {'encoder': self.encoder.state_dict(),
+                                     'generator': self.generator.state_dict(),
+                                     'discriminator': self.discriminator.state_dict()}
+                      # 'optimizer' : {'optimizer_G': self.optimizer_G.state_dict(),
+                      #                'optimizer_D': self.optimizer_D.state_dict()}
+                    }        
         path = self.get_params_path(dir_name, weight_label, iter_no)
         tr.save(state_dict, path)
 
-    def load_params(self, dir_name, weight_label, iter_no=None):
-        path = self.get_params_path(dir_name, weight_label, iter_no)
-        state_dict = tr.load(path)
-        self.load_state_dict(state_dict)
-
+    def load_params(self, dir_name, weight_label, iter_no=None, path = None):
+        if not path:
+            path = self.get_params_path(dir_name, weight_label, iter_no)
+        checkpoint = tr.load(path)
+    
+        iter_no = checkpoint['iteration']
+        
+        self.encoder.load_state_dict(checkpoint['state_dict']['encoder'])
+        self.generator.load_state_dict(checkpoint['state_dict']['generator'])
+        self.discriminator.load_state_dict(checkpoint['state_dict']['discriminator'])
+        
+        # self.optimizer_D.load_state_dict(checkpoint['optimizer']['optimizer_D'])
+        # self.optimizer_G.load_state_dict(checkpoint['optimizer']['optimizer_G'])
 
 class BaseGan(BaseModel):
     def __init__(self, name=None):
