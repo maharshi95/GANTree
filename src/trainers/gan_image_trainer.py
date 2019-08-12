@@ -1,83 +1,40 @@
 from __future__ import print_function, division, absolute_import
 import time
+
 import numpy as np
-from sklearn import preprocessing as prep
-from numpy import linalg as LA
-import imageio as im
+import cv2
 
 from tqdm import tqdm
 from multiprocessing import Pool
 from matplotlib import pyplot as plt
 from tensorboardX import SummaryWriter
 import os
-from configs import TrainConfig
-from models.toy.gan import ToyGAN
-from utils.decorators import numpy_output
+from models.fashion.gan import ImgGAN
 
 from paths import Paths
-from utils import viz_utils
 from utils.tr_utils import as_np
 from base import hyperparams as base_hp
-from base.model import BaseGan
+
 from base.trainer import BaseTrainer
 from base.dataloader import BaseDataLoader
+from torch.utils.data import DataLoader
 
 from exp_context import ExperimentContext
 import math
-from PIL import Image
 
-import imageio as imag
+import torch as tr
+from torch.autograd import Variable
+
 exp_name = ExperimentContext.exp_name
-
-
-#
-# def (z):
-#
-#     #  z.shape[0]:batchsize
-#     #  z.shape[1]:z_size
-#     z = as_np(z)
-#     data_scaled = prep.scale(z)
-#
-#     w, v = LA.eig(np.cov(data_scaled, rowvar=False))
-#     _main_axes = v[:, :2]
-#     projected_data = np.dot(data_scaled, _main_axes)
-#
-#     return projected_data
-#
-
-
-def generate_and_save_image(plots_data, iter_no, image_label, scatter_size=0.5, log=False):
-    if log:
-        print('------------------------------------------------------------')
-        print('%s: step %i: started generation' % (exp_name, iter_no))
-
-    figure = viz_utils.get_figure(plots_data, scatter_size)
-    if log:
-        print('%s: step %i: got figure' % (exp_name, iter_no))
-
-    figure_name = '%s-%05d.png' % (image_label, iter_no)
-    figure_path = Paths.get_result_path(figure_name)
-    figure.savefig(figure_path)
-    plt.close(figure)
-
-    img = np.array(im.imread(figure_path), dtype=np.uint8)
-    img = img[:, :, :-1]
-    img = img.transpose(2, 0, 1)
-    img = np.expand_dims(img, 0)
-    if log:
-        print('%s: step %i: visualization saved' % (exp_name, iter_no))
-        print('------------------------------------------------------------')
-    return img, iter_no
 
 
 def make_grid(tensor, nrow=8, padding=2,
               normalize=False, scale_each=False):
-    """Code based on https://github.com/pytorch/vision/blob/master/torchvision/utils.py"""
     nmaps = tensor.shape[0]
     xmaps = min(nrow, nmaps)
     ymaps = int(math.ceil(float(nmaps) / xmaps))
     height, width = int(tensor.shape[1] + padding), int(tensor.shape[2] + padding)
-    grid = np.zeros([height * ymaps + 1 + padding // 2, width * xmaps + 1 + padding // 2, 3], dtype=np.float16)
+    grid = np.zeros([height * ymaps + 1 + padding // 2, width * xmaps + 1 + padding // 2, 3], dtype=np.uint8)
     k = 0
     for y in range(ymaps):
         for x in range(xmaps):
@@ -93,24 +50,16 @@ def make_grid(tensor, nrow=8, padding=2,
 
 def save_image(tensor, filename=None, nrow=8, padding=2,
                normalize=False, scale_each=False):
-    # print(type(tensor),tensor.shape)
-    tensor = tensor[:, 0, :, :, None]
+    tensor = as_np(tensor).transpose([0, 2, 3, 1])
+    tensor = ((tensor + 1.0) / 2 * 255).astype(np.uint)
     ndarr = make_grid(tensor, nrow=nrow, padding=padding,
-                      normalize=normalize, scale_each=scale_each)
-    # print(ndarr.shape)
+                      normalize=normalize, scale_each=scale_each)  # type: ndarray
     if (filename is not None):
-        # img = Image.fromarray(ndarr)
-        # img.save(filename)
-        imag.imsave(filename,ndarr)
+        cv2.imwrite(filename, ndarr[:, :, [2, 1, 0]])
 
     ndarr = ndarr.transpose([2, 0, 1])
 
-
     return ndarr[None, :, :, :]
-
-
-def log_images(real, recon, gen):
-    return real, recon, gen
 
 
 def create_folders(folders=[]):
@@ -120,46 +69,46 @@ def create_folders(folders=[]):
 
 
 class GanImgTrainer(BaseTrainer):
-    def __init__(self, model, data_loader, hyperparams, train_config, tensorboard_msg='', auto_encoder_dl=None):
+    def __init__(self, model, data_loader, hyperparams, train_config, tensorboard_msg=''):
         # type: (BaseGan, BaseDataLoader, base_hp.Hyperparams, TrainConfig, str) -> None
 
         self.H = hyperparams
-        self.iter_no = 1
-        self.n_iter_gen = 0
-        self.n_iter_disc = 0
-        self.n_step_gen, self.n_step_disc = self.H.step_ratio
-        self.train_generator = True
         self.train_config = train_config
         self.tensorboard_msg = tensorboard_msg
-        self.auto_encoder_dl = auto_encoder_dl
+        self.iter_no = 0
+        self.train_discriminator = True
 
         model.create_params_dir()
 
-        self.recon_dir = '../experiments/' + exp_name + '/images/recon/'
-        self.gen_dir = '../experiments/' + exp_name + '/images/gen/'
+        self.recon_dir = '../experiments/' + exp_name + '/images/' + model.name + '/recon/'
+        self.gen_dir = '../experiments/' + exp_name + '/images/' + model.name + '/gen/'
+        self.real_dir = '../experiments/' + exp_name + '/images/' + model.name + '/real/'
+        self.gen_strip = '../experiments/' + exp_name + '/images/'+ model.name + '/strip/'
 
-        create_folders([self.gen_dir + 'train/', self.gen_dir + 'test/', self.recon_dir + 'train/', self.recon_dir + 'test/', ])
+        create_folders([self.gen_dir + 'train/', self.gen_dir + 'test/', 
+                        self.recon_dir + 'train/', self.recon_dir + 'test/', 
+                        self.real_dir + 'train/', self.real_dir + 'test/',
+                        self.gen_strip + 'train/', self.gen_strip + 'test/'])
+
         print(os.path.dirname(os.path.realpath(__file__)))
 
         self.writer = {
             'train': SummaryWriter(model.get_log_writer_path('train')),
-            'test': SummaryWriter(model.get_log_writer_path('test')),
+            'test': SummaryWriter(model.get_log_writer_path('test'))
         }
-
-        # bounds = 6
 
         seed_data, seed_labels = data_loader.random_batch('test', self.H.seed_batch_size)
         test_seed = {
-            'x': seed_data,
-            'l': seed_labels,
-            'z': model.sample((seed_data.shape[0],)),
+            'x': seed_data.cuda(),
+            'labels': seed_labels.cuda(),
+            'z': model.sample((seed_data.shape[0],))
         }
 
         seed_data, seed_labels = data_loader.random_batch('train', self.H.seed_batch_size)
         train_seed = {
-            'x': seed_data,
-            'l': seed_labels,
-            'z': model.sample((seed_data.shape[0],)),
+            'x': seed_data.cuda(),
+            'labels': seed_labels.cuda(),
+            'z': model.sample((seed_data.shape[0],))
         }
 
         self.seed_data = {
@@ -171,13 +120,6 @@ class GanImgTrainer(BaseTrainer):
 
         super(GanImgTrainer, self).__init__(model, data_loader, self.H.n_iterations)
 
-    def gen_train_limit_reached(self, gen_accuracy):
-        return self.n_iter_gen == self.H.gen_iter_count or gen_accuracy >= 80
-
-    def disc_train_limit_reached(self, disc_accuracy):
-        return self.n_iter_disc == self.H.disc_iter_count or disc_accuracy >= 90
-
-    # Check Functions for various operations
     def is_console_log_step(self):
         n_step = self.train_config.n_step_console_log
         return n_step > 0 and self.iter_no % n_step == 0
@@ -188,39 +130,25 @@ class GanImgTrainer(BaseTrainer):
 
     def is_params_save_step(self):
         n_step = self.train_config.n_step_save_params
-        return n_step > 0 and self.iter_no % n_step == 0
+        return n_step > 0 and self.iter_no % n_step == 0 and self.iter_no != 0
 
     def is_validation_step(self):
         n_step = self.train_config.n_step_validation
-        return n_step > 0 and self.iter_no % n_step == 0
+        return n_step > 0 and self.iter_no % n_step == 0 
 
     def is_visualization_step(self):
         if self.H.show_visual_while_training:
             if self.iter_no % self.train_config.n_step_visualize == 0:
                 return True
-            elif self.iter_no < self.train_config.n_step_visualize:
-                if self.iter_no % 200 == 0:
-                    return True
         return False
 
-    # Conditional Switch - Training Networks
-    def switch_train_mode(self, gen_accuracy, disc_accuracy):
-        if self.train_generator:
-            if self.gen_train_limit_reached(gen_accuracy):
-                self.n_iter_gen = 0
-                self.train_generator = False
-
-        if not self.train_generator:
-            if self.disc_train_limit_reached(disc_accuracy):
-                self.n_iter_disc = 0
-                self.train_generator = True
 
     def log_console(self, metrics):
         print('Test Step', self.iter_no + 1)
         print('%s: step %i:     Disc Acc: %.3f' % (exp_name, self.iter_no, metrics['accuracy_dis_x']))
         print('%s: step %i:     Gen  Acc: %.3f' % (exp_name, self.iter_no, metrics['accuracy_gen_x']))
-        print('%s: step %i: x_recon Loss: %.3f' % (exp_name, self.iter_no, metrics['loss_x_recon']))
-        print('%s: step %i: z_recon Loss: %.3f' % (exp_name, self.iter_no, metrics['loss_z_recon']))
+        print('%s: step %i: x_recon Loss: %.3f' % (exp_name, self.iter_no, metrics['d_loss']))
+        print('%s: step %i: z_recon Loss: %.3f' % (exp_name, self.iter_no, metrics['g_loss']))
         print()
 
     def validation(self):
@@ -229,138 +157,167 @@ class GanImgTrainer(BaseTrainer):
         model = self.model
         dl = self.data_loader
 
-        iter_time_start = time.time()
 
-        x_test, _ = dl.next_batch('test')
+        x_test = dl.test_data()[:64].cuda()
         z_test = model.sample((x_test.shape[0],))
-        metrics = model.compute_metrics(x_test, z_test, True)
-        g_acc, d_acc = metrics['accuracy_gen_x'], metrics['accuracy_dis_x']
 
-        # Tensorboard Log
-        if self.is_tboard_log_step():
-            for tag, value in metrics.items():
-                self.writer['test'].add_scalar(tag, value, self.iter_no)
+        metrics = model.compute_metrics(x_test, z_test)
+
+        for tag, value in metrics.items():
+            self.writer['test'].add_scalar(self.model.name + '_' + tag, value.item(), self.iter_no)
 
         # Console Log
         if self.is_console_log_step():
             self.log_console(metrics)
-            iter_time_end = time.time()
 
-            print('Test Iter Time: %.4f' % (iter_time_end - iter_time_start))
-            print('------------------------------------------------------------')
         self.model.train()
 
     def visualize(self, split):
+
         self.model.eval()
-        tic_viz = time.time()  # def visualize(self, split):
-        tic_data_prep = time.time()  # self.model.eval()
-        recon, gen, real = self.save_img(self.seed_data[split], split=split)
-        # print(split, 'recon', recon.shape, recon.min(), recon.max())        # recon, gen, real = self.save_img(self.seed_data[split])
-        # print(split, 'gen', gen.shape, gen.min(), gen.max())
-        # print(split, 'real', real.shape, real.min(), real.max())        # writer = self.writer[split]
-        tac_data_prep = time.time()  # image_tag = '%s-plot' % self.model.name
-        time_data_prep = tac_data_prep - tic_data_prep  # iter_no = self.iter_no
+        model = self.model
 
-        writer = self.writer[split]  # def callback(item):
-        image_tag = '%s-plot' % self.model.name  # real, recon, gen, image_tag, iter_no = item
-        iter_no = self.iter_no  # writer.add_image(image_tag + '-recon', recon, iter_no)
-        #     writer.add_image(image_tag + '-gen', gen, iter_no)
-        writer.add_image(image_tag + '-recon', recon, iter_no)  # writer.add_image(image_tag + '-real', real, iter_no)
-        writer.add_image(image_tag + '-gen', gen, iter_no)
-        writer.add_image(image_tag + '-recon', recon, iter_no)
-        writer.add_image(image_tag + '-real', real,iter_no)  # self.pool.apply_async(log_images, (real, recon, gen, image_tag, iter_no), callback=callback)
+        data = self.seed_data[split]
+       
+        x = data['x']
+        z = data['z']
 
-        self.model.train() # self.model.train()
+        x_recon = model.reconstruct_x(x)
+        x_gen = model.decode(z)
 
-    def train_step_ae(self, x_train, z_train):
-        if self.H.train_autoencoder:
-            # model.step_train_encoder(x_train, z_train)
-            # model.step_train_decoder(z_train)
-            self.model.step_train_autoencoder(x_train, z_train)
+        recon_img = save_image(x_recon, filename = self.recon_dir + split + '/' + str(self.iter_no) + '.png')
+        gen_img = save_image(x_gen, filename = self.gen_dir + split + '/' + str(self.iter_no) + '.png')
+        real = save_image(x, filename = self.real_dir + split + '/' + str(self.iter_no) + '.png')
 
-    def train_step_ad(self, x_train, z_train):
+        image_tag = '%s-plot' % self.model.name
+
+        self.writer[split].add_image(image_tag + 'gen', gen_img[0], self.iter_no)
+        self.writer[split].add_image(image_tag + 'recon', recon_img[0], self.iter_no)
+        self.writer[split].add_image(image_tag + 'real', real[0], self.iter_no)
+
+        model.train()
+
+    def image_strip(self, split, fixed = False):
+        self.model.eval()
+
         model = self.model
         H = self.H
+    
+        data = self.data_loader.data[split]
 
-        if self.train_generator:
-            self.n_iter_gen += 1
-            if H.train_generator_adv:
-                model.step_train_generator(x_train, z_train)
-        else:
-            self.n_iter_disc += 1
-            model.step_train_discriminator(x_train, z_train)
+        x1 = tr.Tensor(data[6]).cuda()
+        enc1 = model.encoder(x1.unsqueeze(0))
+        if fixed:
+            np.random.seed(10)
+        z1 = model.sample((1,)).cpu().numpy()
 
-    def train_step_2(self, x_train, z_train):
-        model = self.model
+        x2 = tr.Tensor(data[9]).cuda()
+        enc2 = model.encoder(x2.unsqueeze(0))
+        if fixed:
+            np.random.seed(80)
+        z2 = model.sample((1,)).cpu().numpy()        
 
-        if self.train_generator:
-            self.n_iter_gen += 1
-            model.step_train_encoder(x_train, z_train, lam=0.001)
-            model.step_train_decoder(x_train, z_train, lam=0.001)
-        else:
-            self.n_iter_disc += 1
-            model.step_train_discriminator(x_train, z_train)
+        x_real_interpolated = np.asarray([(c*x1.cpu().numpy() + (100-c)*x2.cpu().numpy())/100.0 for c in range(0, 100, 5)])
+        enc_interpolated = [(c*enc1.detach().cpu().numpy() + (100-c)*enc2.detach().cpu().numpy())/100.0 for c in range(0, 100, 5)]
+        enc_interpolated = tr.Tensor(enc_interpolated).squeeze(1).cuda()
+        z_interpolated = [(c*z1 + (100-c)*z2)/100.0 for c in range(0, 100, 5)]
+        z_interpolated = tr.Tensor(z_interpolated).squeeze(1).cuda()
 
-    def save_img(self, test_seed=None, split='train'):
-        # test_seed = self.fixed_seed if test_seed is None else test_seed
-        x = test_seed['x']
-        z = test_seed['z']
+        x_enc_interpolated = model.generator(enc_interpolated)
+        x_z_interpolated = model.generator(z_interpolated)
 
-        x_recon = self.model.reconstruct_x(x)
-        x_gen = self.model.decode(z)
-        # shape:[1,c,h,w]
+        recon_strip = save_image(x_enc_interpolated)
+        real_strip = save_image(x_real_interpolated)
+        gen_strip = save_image(x_z_interpolated)
 
-        recon_img = save_image(x_recon)  # , self.recon_dir + split + '/' + str(self.iter_no) + '.png')
-        gen_img = save_image(x_gen, filename=self.gen_dir + split + '/' + str(self.iter_no) + '.png')
-        real = save_image(x)
+        self.writer[split].add_image('recon_strip', recon_strip[0], self.iter_no)
+        self.writer[split].add_image('real_strip', real_strip[0], self.iter_no)
+        self.writer[split].add_image('gen_strip', gen_strip[0], self.iter_no)
 
-        return recon_img, gen_img, real
+        model.train()
 
     def full_train_step(self, visualize=True, validation=True, save_params=True):
         dl = self.data_loader
-        model = self.model  # type: ImgGAN
+        model = self.model
         H = self.H
+            
+        x_train, _, _ = dl.next_batch('train')
+        x_train = x_train.cuda()
 
-        iter_time_start = time.time()
+        z_train = model.sample((x_train.shape[0],))
 
-        x_train, _ = dl.next_batch('train')
-        z_train = model.sample((H.batch_size,))
-        self.train_step_ae(x_train, z_train)
-        self.train_step_ad(x_train, z_train)
-        # net_id = 1 if self.train_generator else 0
-        # self.writer['train'].add_scalar('is_gen', net_id, self.iter_no)
+        valid = Variable(tr.Tensor(x_train.shape[0], 1).fill_(1.0), requires_grad=False).cuda()
+        fake = Variable(tr.Tensor(x_train.shape[0], 1).fill_(0.0), requires_grad=False).cuda()
+        
+        encoded_imgs = model.encoder(x_train)
+        decoded_imgs = model.generator(encoded_imgs)
+        
+        # ---------------------
+        #  Train Discriminator
+        # ---------------------
+        
+        noise_prop = 0.05 # Randomly flip 5% of labels
 
-        # Train Losses Computation
-        self.model.eval()
-        x_train_batch = self.seed_data['train']['x']
-        z_train_batch = self.seed_data['train']['z']
+        # Prepare labels for real data
+        true_labels = np.ones((x_train.shape[0], 1)) - np.random.uniform(low=0.0, high=0.1, size=(x_train.shape[0], 1))
+        flipped_idx = np.random.choice(np.arange(len(true_labels)), size=int(noise_prop*len(true_labels)))
+        true_labels[flipped_idx] = 1 - true_labels[flipped_idx]
 
-        metrics = model.compute_metrics(x_train_batch, z_train_batch)
-        self.model.train()
+        # Prepare labels for generated data
+        gene_labels = np.zeros((x_train.shape[0], 1)) + np.random.uniform(low=0.0, high=0.1, size=(x_train.shape[0], 1))
+        flipped_idx = np.random.choice(np.arange(len(gene_labels)), size=int(noise_prop*len(gene_labels)))
+        gene_labels[flipped_idx] = 1 - gene_labels[flipped_idx]
+        
+        true_labels = Variable(tr.Tensor(true_labels), requires_grad=False).cuda()
+        gene_labels = Variable(tr.Tensor(gene_labels), requires_grad=False).cuda()
 
-        g_acc, d_acc = metrics['accuracy_gen_x'], metrics['accuracy_dis_x']
+        if self.train_discriminator:
 
-        # # Console Log
-        # if self.is_console_log_step():
-        #     print('============================================================')
-        #     print('Train Step', self.iter_no + 1)
-        #     print('%s: step %i:     Disc Acc: %.3f' % (exp_name, self.iter_no, metrics['accuracy_dis_x'].item()))
-        #     print('%s: step %i:     Gen  Acc: %.3f' % (exp_name, self.iter_no, metrics['accuracy_gen_x'].item()))
-        #     print('%s: step %i: x_recon Loss: %.3f' % (exp_name, self.iter_no, metrics['loss_x_recon'].item()))
-        #     print('%s: step %i: z_recon Loss: %.3f' % (exp_name, self.iter_no, metrics['loss_z_recon'].item()))
-        #     print('------------------------------------------------------------')
-        #
+            model.optimizer_D.zero_grad()
+            real_loss = model.adversarial_loss(model.discriminator(z_train), true_labels)
+            real_loss.backward(retain_graph = True)
+            model.optimizer_D.step()
+            
+            model.optimizer_D.zero_grad()
+            fake_loss = model.adversarial_loss(model.discriminator(encoded_imgs), gene_labels)
+            fake_loss.backward(retain_graph = True)
+            model.optimizer_D.step()
+
+        # -----------------
+        #  Train Generator
+        # -----------------
+
+        model.optimizer_G.zero_grad()
+
+        # Loss measures generator's ability to fool the discriminator
+        g_loss =    0.01 * model.adversarial_loss(model.discriminator(encoded_imgs), valid) + \
+                    0.99 * model.pixelwise_loss(decoded_imgs, x_train)
+
+        g_loss.backward()
+        model.optimizer_G.step()
+
+        # Console Log
+        if self.is_console_log_step():
+            metrics = model.compute_metrics(x_train, z_train)
+
+            print('============================================================')
+            print('Train Step', self.iter_no + 1)
+            print('%s: step %i:     Disc Acc: %.3f' % (exp_name, self.iter_no, metrics['accuracy_dis_x'].item()))
+            print('%s: step %i:     Gen  Acc: %.3f' % (exp_name, self.iter_no, metrics['accuracy_gen_x'].item()))
+            print('%s: step %i: x_recon Loss: %.3f' % (exp_name, self.iter_no, metrics['d_loss'].item()))
+            print('%s: step %i: z_recon Loss: %.3f' % (exp_name, self.iter_no, metrics['g_loss'].item()))
+            print('------------------------------------------------------------')
+        
         # Tensorboard Log
         if self.is_tboard_log_step():
+            metrics = model.compute_metrics(x_train, z_train)
             for tag, value in metrics.items():
-                self.writer['train'].add_scalar(tag, value.item(), self.iter_no)
-            self.writer['train'].add_scalar('switch_train_mode', int(self.train_generator), self.iter_no)
-
-        #
+                self.writer['train'].add_scalar(self.model.name + '_' + tag, value.item(), self.iter_no)
+            
         # Validation Computations
         if validation and self.is_validation_step():
             self.validation()
-        #
+        
         # Weights Saving
         if save_params and self.is_params_save_step():
             tic_save = time.time()
@@ -373,23 +330,11 @@ class GanImgTrainer(BaseTrainer):
 
         # # Visualization
         if visualize and self.is_visualization_step():
-            # previous_backend = plt.get_backend()
-            # plt.switch_backend('Agg')
             self.visualize('train')
             self.visualize('test')
-            # plt.switch_backend(previous_backend)
+            self.image_strip('train')
+            self.image_strip('test')
 
-        # Switch Training Networks - Gen | Disc
-        self.switch_train_mode(g_acc, d_acc)
-
-        # iter_time_end = time.time()
-        # if self.is_console_log_step():
-        #     print('Total Iter Time: %.4f' % (iter_time_end - iter_time_start))
-        #     if self.tensorboard_msg:
-        #         print('------------------------------------------------------------')
-        #         print(self.tensorboard_msg)
-        #     print('============================================================')
-        #     print()
 
     def resume(self, dir_name, label, iter_no, n_iterations=None):
         self.iter_no = iter_no
@@ -397,7 +342,9 @@ class GanImgTrainer(BaseTrainer):
         self.train(n_iterations)
 
     def train(self, n_iterations=None, enable_tqdm=True, *args, **kwargs):
+        dl = self.data_loader
         n_iterations = n_iterations or self.n_iterations
+
         start_iter = self.iter_no
         end_iter = start_iter + n_iterations + 1
 
@@ -411,3 +358,5 @@ class GanImgTrainer(BaseTrainer):
         else:
             for self.iter_no in range(start_iter, end_iter):
                 self.full_train_step(*args, **kwargs)
+
+        

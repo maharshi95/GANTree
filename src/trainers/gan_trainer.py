@@ -135,6 +135,8 @@ class GanTrainer(BaseTrainer):
         bounds = 6
 
         seed_data, seed_labels = data_loader.random_batch('test', self.H.seed_batch_size)
+        print(seed_data)
+        print(seed_data.shape)
         test_seed = {
             'x': seed_data,
             'l': seed_labels,
