@@ -1,4 +1,5 @@
 import numpy as np
+import torch as tr
 from utils import np_utils
 from utils.decorators import tensor_output
 
@@ -7,11 +8,12 @@ from configs import Config
 
 class BaseDataLoader(object):
 
-    def __init__(self, input_size=2, latent_size=2, train_batch_size=32, test_batch_size=32, get_tensor=True, supervised=False):
-        self.input_size = input_size
+    def __init__(self, img_size=2, latent_size=2, train_batch_size=64, test_batch_size=64, get_tensor=True, supervised=False, classes = None):
+        self.img_size = img_size
         self.latent_size = latent_size
         self.get_tensor = True
         self.supervised = supervised
+        self.classes = classes
 
         self.batch_size = {
             'train': train_batch_size,
@@ -21,17 +23,20 @@ class BaseDataLoader(object):
         all_data = self.get_data()
 
         self.update_data(*all_data)
+        
 
     def update_data(self, train_data, test_data, train_labels=None, test_labels=None):
+
+        #TODO: Modify to make this generic for non cuda devices
         if self.supervised:
             self.labels = {
-                'train': train_labels.cuda(),
-                'test': test_labels.cuda(),
+                'train': tr.tensor(train_labels),
+                'test': tr.tensor(test_labels),
             }
 
         self.data = {
-            'train': train_data.cuda(),
-            'test': test_data.cuda(),
+            'train': tr.tensor(train_data),
+            'test': tr.tensor(test_data),
         }
 
         self.n_batches = {
@@ -44,12 +49,12 @@ class BaseDataLoader(object):
             'test': 0
         }
 
-        self.shuffle('train')
-        self.shuffle('test')
+        # self.shuffle('train')
+        # self.shuffle('test')
 
     def shuffle(self, split):
         n = len(self.data[split])
-        perm = np.random.permutation(n)
+        perm = tr.randperm(n)
         self.data[split] = self.data[split][perm]
         if self.supervised:
             self.labels[split] = self.labels[split][perm]
@@ -67,7 +72,7 @@ class BaseDataLoader(object):
 
         if self.supervised:
             labels = self.labels[split][start: end]
-            return data, labels
+            return data, labels, [i for i in range(start, end)]
         else:
             return data
 
@@ -87,25 +92,17 @@ class BaseDataLoader(object):
         return NotImplemented
 
     @tensor_output(use_gpu=Config.use_gpu)
-    def get_full_space(self, n_samples=1000, bounds=4.0):
-        return np.random.uniform(-bounds, bounds, (n_samples, self.input_size)).astype('float32')
-
-    @tensor_output(use_gpu=Config.use_gpu)
-    def get_z_dist(self, n_samples, dist_type, bounds=1):
-        if dist_type == 'uniform':
-            data = np.random.uniform(-bounds, bounds, (n_samples, self.latent_size))
-        elif dist_type == 'normal':
-            data = np.random.normal(0, 1, (n_samples, self.latent_size))
-        elif dist_type == 'sphere':
-            data = np_utils.unit_norm(np.random.normal(0, 1, (n_samples, self.latent_size)), axis=-1)
-        else:
-            raise Exception('Invalid dist_type: {}'.format(dist_type))
-        return data
-
-    @tensor_output(use_gpu=Config.use_gpu)
-    def complete_data(self):
-        return np.concatenate((self.data['train'], self.data['test']), axis=0)
-
-    @tensor_output(use_gpu=Config.use_gpu)
     def train_data(self):
         return self.data['train']
+
+    @tensor_output(use_gpu=Config.use_gpu)
+    def train_data_labels(self):
+        return self.labels['train']
+
+    @tensor_output(use_gpu=Config.use_gpu)
+    def test_data(self):
+        return self.data['test']
+
+    @tensor_output(use_gpu=Config.use_gpu)
+    def test_data_labels(self):
+        return self.labels['test']

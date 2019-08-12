@@ -1,10 +1,11 @@
-from broken_segments import BrokenSegmentsDataLoader
-from broken_circle import BrokenCircleDataLoader
+from .broken_segments import BrokenSegmentsDataLoader
+from .broken_circle import BrokenCircleDataLoader
 from base.dataloader import BaseDataLoader
+from dataloaders.colored import FaceBedDataLoader, BedDataLoader
 from dataloaders.mnist import MixedMnistDataLoader
 from .multi_normal import TwoGaussiansDataLoader, FourGaussiansDataLoader, FourSymGaussiansDataLoader, NineGaussiansDataLoader
 from .celeba import CelebA
-from .mnist import MnistDataLoader,FashionMnistDataLoader
+from .mnist import MnistDataLoader, FashionMnistDataLoader
 
 
 class DataLoaderFactory(object):
@@ -19,15 +20,22 @@ class DataLoaderFactory(object):
 
         # Single Channel Image Datasets
         'mnist': MnistDataLoader,
-        'fashion':FashionMnistDataLoader,
+        'fashion': FashionMnistDataLoader,
         'mixed_mnist': MixedMnistDataLoader,
+        'facebed': FaceBedDataLoader,
 
         # RGB Channel Image Datasets
         'celeba': CelebA,
+        'bed': BedDataLoader,
     }
 
     @classmethod
-    def get_dataloader(cls, name, input_size=1, latent_size=1, *args, **kwargs):
+    def get_dataloader(cls, name, img_size = 2, train_batch_size=1, test_batch_size=1, classes = None, *args, **kwargs):
         # type: (str, int, int, *tuple, **dict) -> BaseDataLoader
         DL = cls.__dict[name]
-        return DL(input_size, latent_size, *args, **kwargs)
+        return DL(img_size = img_size, train_batch_size=train_batch_size, test_batch_size=test_batch_size, classes = classes, *args, **kwargs)
+
+    @classmethod
+    def get_img_dataloader(cls, name, *args, **kwargs):
+        DL = cls.__dict[name]
+        return DL(*args, **kwargs)

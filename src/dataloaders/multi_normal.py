@@ -120,9 +120,9 @@ class NineSymGaussiansDataLoader(BaseDataLoader):
 
 
 class NineGaussiansDataLoader(BaseDataLoader):
-    def __init__(self, input_size=1, latent_size=2, train_batch_size=32, test_batch_size=32, *args, **kwargs):
-        super(NineGaussiansDataLoader, self).__init__(input_size, latent_size, train_batch_size, test_batch_size, *args,
-                                                      **kwargs)
+    def __init__(img_size = 2, train_batch_size=32, test_batch_size=32, get_tensor=True, supervised=True, classes = None):
+        super(NineGaussiansDataLoader, self).__init__(img_size, None, train_batch_size, test_batch_size, get_tensor,
+                                              supervised, classes)
 
     def get_data(self, train_ratio=0.6):
         num_samples = 100000
