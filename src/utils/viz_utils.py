@@ -1,248 +1,338 @@
-import collections
-# from sys import pydebug
-
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-from matplotlib import cm, pyplot as plt
-from matplotlib.patches import Ellipse
-# from mpl_toolkits.mplot3d import Axes3D
-from sklearn.mixture import GaussianMixture
+
+from matplotlib import pyplot as plt
+
+from scipy.spatial import distance
 
 from exp_context import ExperimentContext
-from utils import np_utils
 from utils.tr_utils import as_np
+import torch as tr
 
-H = ExperimentContext.Hyperparams
+from paths import Paths
 
-bounds = 12
+def visualize_embeddings(node, split, threshold, iter_no, phase = None):
+    with tr.no_grad():
+        if split == 'train':
+            data = dl_set[node.id].data[split]
+        elif split == 'test':
+            data = x_seed
 
+        Z = node.post_gmm_encode(data)
 
-def scatter_2d(ax, data, s=0.5, c=None, marker=None, linewidths=None, *args, **kwargs):
-    return ax.scatter(data[:, 0], data[:, 1], s=s, c=c, marker=None, linewidths=linewidths, *args, **kwargs)
+        labels = node.gmm_predict_test(Z, threshold).tolist()
 
+        pca_z = PCA(n_components = 2)
 
-def plot_ellipse(ax, means, cov, scales=3.0, color='red'):
-    e = get_ellipse(means, cov, scales, color=color)
-    return ax.add_artist(e)
+        z_transformed = pca_z.fit_transform(Z)
 
+        color = ['r', 'b', 'g']
+        colors = [color[int(x)] for x in labels]
 
-def get_random_colors(k):
-    colors = cm.rainbow(np.linspace(0, 1, k))
-    return colors
+        b = 20
+        fig = plt.figure(figsize=(6.5, 6.5))
 
+        ax = fig.add_subplot(111)
+        ax.set_xlim(-b, b)
+        ax.set_ylim(-b, b)
 
-def get_ellipse(means, cov, scales=3.0, alpha=0.25, color='yellow'):
-    if not isinstance(scales, collections.Iterable):
-        center, theta, width, height = np_utils.ellipse_params(means, cov, scale=scales)
-        return Ellipse(center, width, height, np.rad2deg(theta), alpha=alpha, color=color)
-
-    ellipses = []
-    for scale in scales:
-        center, theta, width, height = np_utils.ellipse_params(means, cov, scale=scale)
-        e = Ellipse(center, width, height, np.rad2deg(theta), alpha=alpha, color=color)
-        ellipses.append(e)
-    return ellipses
-
-
-def plot_ellipses(ax, gmm, scales):
-    n = gmm.n_components
-    colors = get_random_colors(n)
-    for i in range(n):
-        ellipses = get_ellipse(gmm.means_[i], gmm.covariances_[i], scales, color=colors[i])
-        if isinstance(ellipses, list):
-            for e in ellipses:
-                ax.add_artist(e)
-        else:
-            ax.add_artist(ellipses)
+        ax.scatter(z_transformed[:, 0], z_transformed[:, 1], s = 0.5, c = colors)
 
 
-def hist(ax, X, binwidth=0.2, color=None):
-    if X.shape[0] == 0:
-        return
-    bins = np.arange(np.min(X), np.max(X) + binwidth, binwidth)
-    return ax.hist(X, bins, color=color, ec='black', normed=True)
+        node.trainer.writer[split].add_figure(node.name + '_' + phase +'_plots', fig, iter_no)
+
+        path = Paths.get_result_path(node.name + '_' + split + '_embedding_plots/'+ phase + '_plot_%03d' % (iter_no))
+        fig.savefig(path)
+        plt.close(fig)
 
 
-def twin_hist(ax, X, binwidth=0.2, colors=('green', 'red')):
-    hist(ax, X[0], binwidth=binwidth, color=colors[0])
-    hist(ax, X[1], binwidth=binwidth, color=colors[1])
+def visualize_images(node, split, iter_no, phase):
+    with tr.no_grad():
+        if split == 'train':
+            data = dl_set[node.id].data['train'][:1000]
+        elif split == 'test':
+            data = x_seed
+
+        preds = node.gmm_predict(node.post_gmm_encode(data))
+        x_data_child0 = data[np.where(preds == 0)].cuda()
+        x_data_child1 = data[np.where(preds == 1)].cuda()
+
+        if x_data_child0.shape[0] > 64:
+            x_data_child0 = x_data_child0[:64]
+
+        if x_data_child1.shape[0] > 64:
+            x_data_child1 = x_data_child1[:64]
+
+        if x_data_child0.shape[0] == 0:
+            x_data_child0 = node.trainer.seed_data[split]['x']
+
+        if x_data_child1.shape[0] == 0:
+            x_data_child1 = node.trainer.seed_data[split]['x']
+
+        z_data_child0 = node.get_child(0).gan.sample((x_data_child0.shape[0],))
+        z_data_child1 = node.get_child(1).gan.sample((x_data_child1.shape[0],))
+
+        x_recon_child0 = node.get_child(0).gan.reconstruct_x(x_data_child0)
+        x_recon_child1 = node.get_child(1).gan.reconstruct_x(x_data_child1)
+        x_gen_child0 = node.get_child(0).gan.decode(z_data_child0)
+        x_gen_child1 = node.get_child(1).gan.decode(z_data_child1)
+
+        recon_img_child0 = save_image(x_recon_child0)
+        gen_img_child0 = save_image(x_gen_child0)
+        recon_img_child1 = save_image(x_recon_child1)
+        gen_img_child1 = save_image(x_gen_child1)
+        real_img_child0 = save_image(x_data_child0)
+        real_img_child1 = save_image(x_data_child1)
+
+        node.trainer.writer[split].add_image(node.name + '_' + phase + '_child0_recon', recon_img_child0, iter_no)
+        node.trainer.writer[split].add_image(node.name + '_' + phase +  '_child0_gen', gen_img_child0, iter_no)
+        node.trainer.writer[split].add_image(node.name + '_' + phase +  '_child0_real', real_img_child0, iter_no)
+        node.trainer.writer[split].add_image(node.name + '_' + phase +  '_child1_recon', recon_img_child1, iter_no)
+        node.trainer.writer[split].add_image(node.name + '_' + phase +  '_child1_gen', gen_img_child1, iter_no)
+        node.trainer.writer[split].add_image(node.name + '_' + phase +  '_child1_real', real_img_child1, iter_no)
 
 
-def twin_scatter(ax, data, colors=('green', 'red'), scatter_size=3):
-    for i in range(len(colors)):
-        if data[i].shape[-1] == 2:
-            ax.scatter(data[i][:, 0], data[i][:, 1], c=colors[i], s=scatter_size)
-        elif data[i].shape[-1] == 3:
-            ax.scatter(data[i][:, 0], data[i][:, 1], data[i][:, 2], c=colors[i], s=scatter_size)
+def z_histogram_plot(node, split, iter_no, phase):
+    with tr.no_grad():
+        if split == 'train':
+            data = dl_set[node.id].data[split]
+        elif split == 'test':
+            data = x_seed
+
+        Z = node.post_gmm_encode(data)
+
+        for i in range(Z.shape[1]):
+            plot_data = Z[:, i]
+            plt.hist(plot_data)
+
+            fig_histogram = plt.gcf()
+            node.trainer.writer[split].add_histogram(node.name + '_' + phase + '_embedding_' + str(i), plot_data, iter_no)
+            path_embedding_hist = Paths.get_result_path(node.name + '_' + split +  '_embedding_histogram/' + phase + 'embedding_%03d_%01d' % (iter_no, i))
+            fig_histogram.savefig(path_embedding_hist)
+            plt.close(fig_histogram)
 
 
-def plot_points(ax, data, scatter_size=3):
-    if H.input_size == 1:
-        twin_hist(ax, data, colors=('green', 'red'))
-    elif H.input_size <= 3:
-        twin_scatter(ax, data, ('green', 'red'), scatter_size)
+def get_labels_distribution(node, split):
+    iter_no = 0
+    with tr.no_grad():
+
+        if split == 'train':
+            data = dl_set[node.id].data[split]
+            labels = dl_set[node.id].labels[split]
+        elif split == 'test':
+            data = x_seed
+            labels = l_seed
+
+        Z = node.post_gmm_encode(data)
+        
+        pred = node.gmm_predict(Z)
+
+        labels_ch0 = labels[np.where(pred == 0)]
+        labels_ch1 = labels[np.where(pred == 1)]
+
+        np.savez(node.name + '_' + split + '_child_labels', labels_ch0 = labels_ch0, labels_ch1 = labels_ch1)
+
+        count_ch0 = [0 for i in range(10)]
+        count_ch1 = [0 for i in range(10)]
+        prob_ch0 = [0 for i in range(10)]
+        prob_ch1 = [0 for i in range(10)] 
+
+        for i in labels_ch0:
+            count_ch0[i] += 1
+
+        for i in labels_ch1:
+            count_ch1[i] += 1
+
+        for i in range(10):
+            if (count_ch0[i] + count_ch1[i]) != 0:
+                prob_ch0[i] = count_ch0[i] * 1.0 / (count_ch0[i] + count_ch1[i])
+                prob_ch1[i] = count_ch1[i] * 1.0 / (count_ch0[i] + count_ch1[i])
+            else:
+                prob_ch0[i] = 0
+                prob_ch1[i] = 0
+
+        barWidth = 0.3
+        r1 = np.arange(len(count_ch0))
+        r2 = [x+barWidth for x in r1]
+
+        plt.bar(r1, prob_ch0, width = barWidth, color = 'red', edgecolor = 'black', capsize=7)
+        plt.bar(r2, prob_ch1, width = barWidth, color = 'blue', edgecolor = 'black', capsize=7)
+        plt.xticks([r + barWidth for r in range(len(prob_ch0))], ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
+        plt.ylabel('percentage')
+
+        fig_labels_prob = plt.gcf()
+        node.trainer.writer[split].add_figure(node.name + '_labels_prob', fig_labels_prob, iter_no)
+        path_labels_prob = Paths.get_result_path(node.name + '_' + split + '_labels_distribution/probability_%03d' % (iter_no))
+        fig_labels_prob.savefig(path_labels_prob)
+        plt.close(fig_labels_prob)
 
 
-def plot_clusters(ax, data, labels, scatter_size=3):
-    labels = labels.astype(int)
-    indices = map(lambda l: list(set(labels)).index(l), labels)
-    n_labels = len(set(labels))
-    colors = cm.rainbow(np.linspace(0, 1, n_labels))
-    ax.scatter(data[:, 0], data[:, 1], c=colors[indices], s=scatter_size)
+        plt.bar(r1, count_ch0, width = barWidth, color = 'red', edgecolor = 'black', capsize=7)
+        plt.bar(r2, count_ch1, width = barWidth, color = 'blue', edgecolor = 'black', capsize=7)
+        plt.xticks([r + barWidth for r in range(len(count_ch0))], ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
+        plt.ylabel('count')
+
+        fig_labels_count = plt.gcf()
+        node.trainer.writer[split].add_figure(node.name + '_labels_distribution', fig_labels_count, iter_no)
+        path_labels_count = Paths.get_result_path(node.name + '_' + split +  '_labels_distribution/count_%03d' % (iter_no))
+        fig_labels_count.savefig(path_labels_count)
+        plt.close(fig_labels_count)
 
 
-def get_axes(gs_item, axes3d=False):
-    # type: (object, object) -> object
-    if axes3d:
-        ax = plt.subplot(gs_item, projection='3d')
-    else:
-        ax = plt.subplot(gs_item)
-    ax.set_xlim(-bounds, bounds)
-    ax.set_ylim(-bounds, bounds)
-    return ax
 
 
-def get_figure(data, scatter_size=3, margin=0.05):
-    n_rows, n_cols = 4, 6
-    fig = plt.figure(figsize=(n_cols * 2, n_rows * 2))
-    gs = gridspec.GridSpec(n_rows, n_cols, fig)
-    gs.update(bottom=margin, left=margin, top=1 - margin, right=1 - margin)
+def plot_cluster_graphs(node, split, threshold, iter_no, phase):
 
-    rows = data
+    with tr.no_grad():
+        if split == 'train':
+            data = dl_set[node.id].data[split]
+            labels = dl_set[node.id].labels[split]
+        elif split == 'test':
+            data = x_seed
+            labels = l_seed
 
-    z_data, zt_data = rows[-1]
-    gmm = GaussianMixture(2)
-    gmmt = GaussianMixture(2)
+        Z = node.post_gmm_encode(data)
 
-    gmm.fit(z_data)
-    gmmt.fit(zt_data)
+        if split == 'train':
+            p = node.kmeans.pred
+        elif split == 'test':
+            p = node.gmm_predict_test(Z, threshold)
 
-    # X-Z-X-Z iteration with real and full space
-    for i in [0, 3]:
-        x_real, z_real, zt_real, x_recon, z_recon, zt_recon = rows[i]
-        x_3d = x_real[0].shape[-1] == 3
-        z_3d = z_real[0].shape[-1] == 3
-        _3d = [x_3d, z_3d, z_3d, x_3d, z_3d, z_3d]
+        """ plot the count of unassigned vs assigned labels
+            purple -- unassigned
+            green -- assigned """
 
-        ax = [None] * n_cols
-        for j, data in enumerate(rows[i]):
-            ax[j] = get_axes(gs[i * n_cols + j], _3d[j])
-            plot_points(ax[j], data, scatter_size)
+        unassigned_labels = [0 for i in range(3)]
+        assigned_labels = [0 for i in range(3)]
 
-    # Z-X-Z-X iteration with real and full space
-    for i in [1]:
-        z_rand, x_real, z_real, zt_real, x_recon, z_recon = rows[i]
-        x_3d = x_real[0].shape[-1] == 3
-        z_3d = z_real[0].shape[-1] == 3
-        _3d = [z_3d, x_3d, z_3d, z_3d, x_3d, z_3d]
+        for i in range(len(p)):
+            if p[i] == 2:
+                unassigned_labels[labels[i]] += 1
+            else:
+                assigned_labels[labels[i]] += 1
 
-        ax = [None] * len(rows[i])
+        barWidth = 0.3
+        r1 = np.arange(len(unassigned_labels))
+        r2 = [x+barWidth for x in r1]
 
-        if z_rand.shape[-1] == 1:
-            ax[0] = get_axes(gs[i * n_cols + 0])
-            ax[0].hist(z_rand, bins=50, ec='black')
-        elif z_rand.shape[-1] == 2:
-            ax[0] = get_axes(gs[i * n_cols + 0])
-            ax[0].scatter(z_rand[:, 0], z_rand[:, 1], s=scatter_size)
-        elif z_rand.shape[-1] == 3:
-            ax[0] = get_axes(gs[i * n_cols + 0], axes3d=True)
-            ax[0].scatter(z_rand[:, 0], z_rand[:, 1], z_rand[:, 2], s=scatter_size)
+        plt.bar(r1, unassigned_labels, width = barWidth, color = 'purple', edgecolor = 'black', capsize=7)
+        plt.bar(r2, assigned_labels, width = barWidth, color = 'green', edgecolor = 'black', capsize=7)
+        plt.xticks([r + barWidth for r in range(len(unassigned_labels))], ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
+        plt.ylabel('count')
 
-        for j in range(1, n_cols):
-            ax[j] = get_axes(gs[i * n_cols + j], _3d[j])
-            plot_points(ax[j], rows[i][j], scatter_size)
-
-    # X-Z-X-Z iteration with real x with cluster colours
-    for i in [2]:
-        row = rows[i]
-        # x, z, zt, x_, z_, zt_, l = rows[i]
-        l = row[-1]
-
-        x_3d = x_real[0].shape[-1] == 3
-        z_3d = z_real[0].shape[-1] == 3
-        _3d = [x_3d, z_3d, z_3d, x_3d, z_3d, z_3d]
-
-        ax = [None] * n_cols
-        for j in range(n_cols):
-            ax[j] = get_axes(gs[i * n_cols + j], _3d[j])
-
-            plot_clusters(ax[j], row[j], l, scatter_size)
-
-        plot_ellipses(ax[4], gmm, [1, 2, 3])
-        plot_ellipses(ax[5], gmmt, [1, 2, 3])
-
-    return fig
+        fig_assigned = plt.gcf()
+        node.trainer.writer[split].add_figure(node.name + '_' + phase + '_assigned_labels_count', fig_assigned, iter_no)
+        path_assign = Paths.get_result_path(node.name + '_' + split +  '_assigned/' + phase + 'assigned_%03d' % (iter_no))
+        fig_assigned.savefig(path_assign)
+        plt.close(fig_assigned)
 
 
-def get_x_clf_figure(plot_data, n_modes=9):
-    [[
-        [x_batch, labels],
-        [root_means, root_cov, _, _],
-        [ch0_means, ch0_cov, _, _],
-        [ch1_means, ch1_cov, _, _]
-    ], [
-        z_batch_pre,
-        z_batch_post,
-        x_recon_pre,
-        x_recon_post
-    ], [
-        z_rand0,
-        x_fake0,
-        z_rand1,
-        x_fake1,
 
-    ]] = plot_data
-    b = 9
-    colors = get_random_colors(n_modes)
-    colors = colors[labels]
+        """ plot the percentage of assigned labels in cluster 0 and cluster 1
+            red -- cluster 0
+            blue -- cluster 1 """
 
-    fig = plt.figure(figsize=(12, 12))
+        l_seed_ch0 = labels[np.where(p == 0)]
+        l_seed_ch1 = labels[np.where(p == 1)]
 
-    #
-    # ax = fig.add_subplot(331)
-    # ax.set_xlim(-b, b)
-    # ax.set_ylim(-b, b)
-    # scatter_2d(ax, x_batch, c=colors)
+        count_ch0 = [0 for i in range(3)]
+        count_ch1 = [0 for i in range(3)]
+        prob_ch0 = [0 for i in range(3)]
+        prob_ch1 = [0 for i in range(3)]
 
-    # ax = fig.add_subplot(332)
-    # ax.set_xlim(-b, b)
-    # ax.set_ylim(-b, b)
-    # scatter_2d(ax, x_recon_post, c=colors)
+        for i in l_seed_ch0:
+            count_ch0[i] += 1
 
-    ax = fig.add_subplot(333)
-    ax.set_xlim(-b, b)
-    ax.set_ylim(-b, b)
-    scatter_2d(ax, z_batch_post, c=colors)
-    plot_ellipse(ax, ch0_means[:2], ch0_cov[0:2,0:2], color='red')
-    plot_ellipse(ax, ch1_means[:2], ch1_cov[0:2,0:2], color='blue')
+        for i in l_seed_ch1:
+            count_ch1[i] += 1
 
-    # ax = fig.add_subplot(334)
-    # ax.set_xlim(-b, b)
-    # ax.set_ylim(-b, b)
-    # scatter_2d(ax, x_batch)
+        for i in range(3):
+            if (count_ch0[i] + count_ch1[i]) != 0:
+                prob_ch0[i] = count_ch0[i] * 1.0 / (count_ch0[i] + count_ch1[i])
+                prob_ch1[i] = count_ch1[i] * 1.0 / (count_ch0[i] + count_ch1[i])
+            else:
+                prob_ch0[i] = 0
+                prob_ch1[i] = 0
 
-    # ax = fig.add_subplot(335)
-    # ax.set_xlim(-b, b)
-    # ax.set_ylim(-b, b)
-    # scatter_2d(ax, x_recon_pre, c=colors)
+        plt.bar(r1, prob_ch0, width = barWidth, color = 'red', edgecolor = 'black', capsize=7)
+        plt.bar(r2, prob_ch1, width = barWidth, color = 'blue', edgecolor = 'black', capsize=7)
+        plt.xticks([r + barWidth for r in range(len(prob_ch0))], ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
+        plt.ylabel('percentage')
 
-    ax = fig.add_subplot(336)
-    ax.set_xlim(-b, b)
-    ax.set_ylim(-b, b)
-    scatter_2d(ax, z_batch_pre, c=colors)
-    plot_ellipse(ax, root_means[:2], root_cov[0:2,0:2], color='red')
+        fig_confidence = plt.gcf()
+        node.trainer.writer[split].add_figure(node.name +  '_' + phase + '_confidence', fig_confidence, iter_no)
+        path_confidence = Paths.get_result_path(node.name + '_' + split + '_confidence/' + phase + 'confidence_%03d' % (iter_no))
+        fig_confidence.savefig(path_confidence)
+        plt.close(fig_confidence)
 
-    ax = fig.add_subplot(337)
-    ax.set_xlim(-b, b)
-    ax.set_ylim(-b, b)
-    scatter_2d(ax, z_rand0, c='red')
-    scatter_2d(ax, z_rand1, c='blue')
 
-    # ax = fig.add_subplot(338)
-    # ax.set_xlim(-b, b)
-    # ax.set_ylim(-b, b)
-    # scatter_2d(ax, x_fake0, c='red')
-    # scatter_2d(ax, x_fake1, c='blue')
+        """ get count of points that exceed the threshold of phase 1 part 2 """
 
-    return fig
+        aboveThresholdLabels_ch0 = [0 for i in range(3)]
+        aboveThresholdLabels_ch1 = [0 for i in range(3)]
+
+        # percentAbove_ch0 = [0 for i in range(3)]
+        # percentAbove_ch1 = [0 for i in range(3)]
+
+        for i in range(len(p)):
+            if p[i] == 0:
+                if (distance.mahalanobis(Z[i], node.kmeans.means[0], node.kmeans.covs[0])) > threshold:
+                    aboveThresholdLabels_ch0[labels[i]] += 1
+            elif p[i] == 1:
+                if (distance.mahalanobis(Z[i], node.kmeans.means[1], node.kmeans.covs[1])) > threshold:
+                    aboveThresholdLabels_ch1[labels[i]] += 1
+
+        # for i in range(3):
+        #     if (count_ch0[i]) != 0:
+        #         percentAbove_ch0[i] = aboveThresholdLabels_ch0[i] * 1.0 / count_ch0[i]
+        #     else:
+        #         percentAbove_ch0[i] = 0
+
+        #     if (count_ch1[i] != 0):
+        #         percentAbove_ch1[i] = aboveThresholdLabels_ch1[i] * 1.0 / count_ch1[i]
+        #     else:
+        #         percentAbove_ch1[i] = 0
+
+        plt.bar(r1, aboveThresholdLabels_ch0, width = barWidth, color = 'red', edgecolor = 'black', capsize=7)
+        plt.bar(r2, aboveThresholdLabels_ch1, width = barWidth, color = 'blue', edgecolor = 'black', capsize=7)
+        plt.xticks([r + barWidth for r in range(len(aboveThresholdLabels_ch0))], ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
+        plt.ylabel('count')
+
+        fig_above_threshold = plt.gcf()
+        node.trainer.writer[split].add_figure(node.name + '_' + phase + '_above_threshold', fig_above_threshold, iter_no)
+        path_above_threshold = Paths.get_result_path(node.name + '_' + split + '_above_threshold/' + phase + '%03d' % (iter_no))
+        fig_above_threshold.savefig(path_above_threshold)
+        plt.close(fig_above_threshold)
+
+
+
+def plot_mean_axis_distribution(node, split, iter_no, phase):
+
+    mean0 = node.kmeans.means[0]
+    mean1 = node.kmeans.means[1]
+
+    direction = (mean1 - mean0) / np.linalg.norm(mean1 - mean0)
+
+    if split == 'train':
+        data = dl_set[node.id].data['train']
+    elif split == 'test':
+        data = x_seed
+
+    Z = node.post_gmm_encode(data)
+
+    projection = np.zeros(Z.shape)
+
+    for j in range(Z.shape[0]):
+        projection[j] = mean0 + direction * np.dot(Z[j] - mean0, direction)
+
+    for i in range(projection.shape[1]):
+        plot_data_tensorboard = projection[:, i] 
+        plot_data = [projection[:, i], mean0[i], mean1[i]]
+        plt.hist(plot_data, color = ['g', 'r', 'b'])
+        # plt.hist(plot_data_tensorboard, bins = 'auto', color = ['g'])
+
+        fig_mean_axis_histogram = plt.gcf()
+        node.trainer.writer[split].add_histogram(node.name + '_' + phase + '_mean_axis_' + str(i), plot_data_tensorboard, iter_no)
+        # node.trainer.writer[split].add_image(node.name + '_mean_axis_' + str(i), fig_mean_axis_histogram, iter_no)
+        path_mean_axis_hist = Paths.get_result_path(node.name + '_' + split +  '_mean_axis_histogram/' + phase + '%03d_%01d' % (iter_no, i))
+        fig_mean_axis_histogram.savefig(path_mean_axis_hist)
+        plt.close(fig_mean_axis_histogram)

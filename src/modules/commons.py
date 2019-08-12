@@ -61,7 +61,11 @@ class SingleZTransform(nn.Module):
 class ZTransform(nn.Module):
     def __init__(self, src_params, target_params=None):
         super(ZTransform, self).__init__()
-        src_params = map(tr.tensor, src_params)
+        # print(type(src_params))
+        # print(src_params)
+        src_params = list(map(tr.tensor, src_params))
+        # print(src_params)
+        # print(type(src_params))
         if target_params is None:
             target_params = tr.zeros(src_params[0].shape), tr.eye(src_params[0].shape[0])
         self.src_transform = SingleZTransform(src_params)
