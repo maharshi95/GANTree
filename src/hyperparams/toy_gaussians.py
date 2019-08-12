@@ -35,7 +35,7 @@ class Hyperparams:
     logit_x_batch_size = 16
     logit_z_batch_size = 16
 
-    input_size = 2
+    img_size = 2
     z_size = 2
 
     # Distribution params
@@ -52,16 +52,14 @@ class Hyperparams:
     model = 'bcgan'
     exp_name = 'trial_with_gmms'
 
-    # dataloader = 'four_gaussian_sym'
-    dataloader = 'mnist'
+    dataloader = 'nine_gaussian'
+    # dataloader = 'mnist'
 
     n_child_nodes = 2
 
     child_iter = 50
 
     input_channel = 1
-    input_height = 28
-    input_width = 28
 
     @classmethod
     def z_means(cls):

@@ -13,17 +13,17 @@ class Hyperparams(hyperparams.Hyperparams):  # change
     batch_size = 64
     seed_batch_size = 64
 
-    z_dim = 8
+    z_dim = 64
     dmu = 17
     cor = 0.0
 
-    threshold = 2.5
-
     save_node = False
 
-    root_gan_iters = 40000
+    threshold = 2.5
+
+    root_gan_iters = 80000
     phase1_epochs = 13
-    phase2_iters = 20000
+    phase2_iters = 60000
 
     n_step_tboard_log = 100
     n_step_console_log = -1
@@ -39,7 +39,7 @@ class Hyperparams(hyperparams.Hyperparams):  # change
     # n_epochs = 60
 
     img_size = 64
-    channel = 1
+    channel = 3
 
     img_shape = (channel, img_size, img_size)
 
@@ -47,8 +47,8 @@ class Hyperparams(hyperparams.Hyperparams):  # change
 
     show_visual_while_training = True
 
-    dataloader = 'mixed_mnist'
-    no_of_classes = 20
+    dataloader = 'facebed'
+    no_of_classes = 3
 
     n_child_nodes = 2
 

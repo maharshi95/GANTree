@@ -47,8 +47,8 @@ class Hyperparams(hyperparams.Hyperparams):  # change
 
     show_visual_while_training = True
 
-    dataloader = 'mixed_mnist'
-    no_of_classes = 20
+    dataloader = 'mnist'
+    no_of_classes = 10
 
     n_child_nodes = 2
 

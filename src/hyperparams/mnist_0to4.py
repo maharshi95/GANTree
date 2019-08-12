@@ -17,9 +17,9 @@ class Hyperparams(hyperparams.Hyperparams):  # change
     dmu = 17
     cor = 0.0
 
-    threshold = 2.5
+    save_node = True
 
-    save_node = False
+    threshold = 2.5
 
     root_gan_iters = 40000
     phase1_epochs = 13
@@ -40,6 +40,7 @@ class Hyperparams(hyperparams.Hyperparams):  # change
 
     img_size = 64
     channel = 1
+    classes = [0, 1, 2, 3, 4]
 
     img_shape = (channel, img_size, img_size)
 
@@ -47,8 +48,8 @@ class Hyperparams(hyperparams.Hyperparams):  # change
 
     show_visual_while_training = True
 
-    dataloader = 'mixed_mnist'
-    no_of_classes = 20
+    dataloader = 'mnist'
+    no_of_classes = 5
 
     n_child_nodes = 2
 
