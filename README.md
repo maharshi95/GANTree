@@ -11,26 +11,26 @@ The full paper can be found [here]().  If you find our research work helpful, pl
 1. [Overview of the Model](#1-overview-of-the-model)
 2. [Setup Instructions and Dependencies](#2-setup-instructions-and-dependencies)
 3. [Training GAN Tree from Scratch](#3-training-gan-tree-from-scratch)
-    3.1. [Parser Arguments](#31-parser-arguments) 
+    1. [Parser Arguments](#31-parser-arguments) 
 4. [Repository Overview](#4-repository-overview)
 5. [Experiments](#5-experiments)
-    5.1. [GAN Tree for Single Channel Dataset](#51-gan-tree-for-single-channel-dataset)
-    5.2. [GAN Tree for Single Channel Mixed Dataset](#52-gan-tree-for-single-channel-mixed-dataset)
-    5.3. [GAN Tree for Multiple Channel Mixed Dataset](#53-gan-tree-for-multiple-channel-mixed-dataset)
-    5.4. [Incremental GAN Tree](#54-incremental-gan-tree)
+    1. [GAN Tree for Single Channel Dataset](#51-gan-tree-for-single-channel-dataset)
+    2. [GAN Tree for Single Channel Mixed Dataset](#52-gan-tree-for-single-channel-mixed-dataset)
+    3. [GAN Tree for Multiple Channel Mixed Dataset](#53-gan-tree-for-multiple-channel-mixed-dataset)
+    4. [Incremental GAN Tree](#54-incremental-gan-tree)
 6. [Results Obtained](#6-results-obtained)
-    6.1. [Generated GAN Tree for Single Channel Mixed Dataset](#61-generated-gan-tree-for-single-channel-mixed-dataset)
-    6.2. [Generated GAN Tree for Multiple Channel Mixed Dataset](#62-generated-gan-tree-for-multiple-channel-mixed-dataset)
-    6.3. [Generated i-GANTree for Adding Digit 5](#63-generated-iGANTree-for-adding-digit-5)
+    1. [Generated GAN Tree for Single Channel Mixed Dataset](#61-generated-gan-tree-for-single-channel-mixed-dataset)
+    2. [Generated GAN Tree for Multiple Channel Mixed Dataset](#62-generated-gan-tree-for-multiple-channel-mixed-dataset)
+    3. [Generated iGANTree for Adding Digit 5](#63-generated-iGANTree-for-adding-digit-5)
 7. [Guidelines for Contributors](#7-guidelines-for-contributors)
-    7.1. [Reporting Bugs and Opening Issues](#71-reporting-bugs-and-opening-issues)
-    7.2. [Pull Requests](#72-pull-requests)
-8. [License](#7-license)
+    1. [Reporting Bugs and Opening Issues](#71-reporting-bugs-and-opening-issues)
+    2. [Pull Requests](#72-pull-requests)
+8. [License](#8-license)
 
 
 ## 1. Overview of the Model
 
-![overview](resources/Overview.png)
+![overview](resources/Overview.PNG)
 
 The overall GAN Tree architecture is given in the above figure.  For further details about the architecture and training algorithm, please go through the paper.
 
@@ -47,7 +47,7 @@ All dependencies required by this repo can be downloaded by creating a virtual o
 pip install -r requirements.txt
 ```
 
-The `LSUN Bedroom Scene` and `CelebA` required for training can be found in the Google Drive link given inside the `data/datasets.txt` file.
+The `LSUN Bedroom Scene` and `CelebA` datasets required for training can be found in the Google Drive link given inside the `data/datasets.txt` file.
 
 > 1. Make sure to have the proper CUDA version installed for PyTorch 0.4.1.
 > 2. The code will not run on Windows since Pytorch v0.4.1 with Python 2.7 is not supported on it.
@@ -59,12 +59,12 @@ To train your own GAN Tree from scratch, run
 python GANTree.py -hp path/to/hyperparams -en exp_name 
 ```
 
-+ The hyper parameters for your experiment should be set in your `hyperparams.py` file (check `src/hyperparams` for examples).
-+ The training script will create a folder `experiments/exp_name` as specified in your `hyperparams` file or argument passed in the command line to the `-en` flag.
++ The hyper-parameters for the experiment should be set in the `hyperparams.py` file (check `src/hyperparams` for examples).
++ The training script will create a folder `experiments/exp_name` as specified in the `hyperparams.py` file or argument passed in the command line to the `-en` flag.
 + This folder will contain all data related to the experiment such as generated images, logs, plots, and weights. It will also contain a dump of the hyperparameters.
 
 >1. Training will require a large amount of RAM.
->2. Saving Gnodes requires ample amount of space (~500 MB per node).
+>2. Saving GNodes requires ample amount of space (~500 MB per node).
 
 ### 3.1. Parser Arguments
 
@@ -81,11 +81,13 @@ The following argument flags are available for training:
 ## 4. Repository Overview
 This repository contains the following files and folders:
 
-1. **data**: This folder contains the various datasets.
+1. **data**: Contains the various datasets.
 
-2. **experiments**: This folder contains data for different runs.
+2. **experiments**: Contains data for different runs.
 
-3. **src**: Contains all the source code.
+3. **resources**: Contains resources for the README.
+
+4. **src**: Contains all the source code.
 
     i. **base**: Contains the code for all base classes.
     
@@ -127,13 +129,13 @@ python GANTree_FaceBed.py
 
 ### 5.4. Incremental GAN Tree
 
-The GAN Tree has the unique feature of being able to learn new related data without the need of previous data, i.e. learn incrementally.  To run the experiment mentioned in the paper, the following commands can be executed:
+GAN Tree has the unique feature of being able to learn new related data without the need of previous data, i.e. learn incrementally.  To run the experiment mentioned in the paper, the following command can be executed:
 
 ```python
 python GANTree_MNIST_0to4.py
 ```
 
-After creating a GAN Tree trained on the digits 0-4 from the MNIST dataset, we would like to add the digit 5. To incrementally learn a GAN Tree for the same, run the following command:
+After creating a GAN Tree trained on the digits 0-4 from the MNIST dataset, we add the digit 5. To incrementally learn a GAN Tree for the same, run the following command:
 
 ```python
 python iGANTree_add5_dsigma4.py
@@ -148,13 +150,13 @@ python iGANTree_add5_dsigma9.py
 ## 6. Results Obtained
 ### 6.1. Generated GAN Tree for Single Channel Mixed Dataset
 
-![mixed_single](resources/MixedSingle.png)
+![mixed_single](resources/MixedSingle.PNG)
 
 ### 6.2. Generated GAN Tree for Multiple Channel Mixed Dataset
-![mixed_multiple](resources/MixedMultiple.png)
+![mixed_multiple](resources/MixedMultiple.PNG)
 
-### 6.3. Generated i-GANTree for Adding Digit 5
-![igantree](resources/iGANTree.png)
+### 6.3. Generated iGANTree for Adding Digit 5
+![igantree](resources/iGANTree.PNG)
 
 ## 7. Guidelines for Contributors
 
@@ -162,7 +164,7 @@ python iGANTree_add5_dsigma9.py
 
 If you'd like to report a bug or open an issue then please:
 
-**Check if there is an existing issue.** If there is then please add any more information that you have, or give it a 👍.
+**Check if there is an existing issue.** If there is, then please add any more information that you have, or give it a 👍.
 
 When submitting an issue please describe the issue as clearly as possible, including how to reproduce the bug. If you can include a screenshot of the issues, that would be helpful.
 
