@@ -1,7 +1,7 @@
 # GAN Tree
 This repository contains code for the paper `GAN-Tree: An Incrementally Learned Hierarchical Generative Framework for Multi-Modal Data Distributions`, published in ICCV 2019.
 
-The full paper can be found [here]().  If you find our research work helpful, please consider citing:
+The full paper can be found [here](https://arxiv.org/abs/1908.03919).  If you find our research work helpful, please consider citing:
 
 ```cite
 
@@ -51,7 +51,7 @@ pip install -r requirements.txt
 
 The `LSUN Bedroom Scene` and `CelebA` datasets required for training can be found in the Google Drive link given inside the `data/datasets.txt` file.
 
-> 1. Make sure to have the proper CUDA version installed for PyTorch 0.4.1.
+> 1. Make sure to have the proper CUDA version installed for PyTorch v0.4.1.
 > 2. The code will not run on Windows since Pytorch v0.4.1 with Python 2.7 is not supported on it.
 
 ## 3. Training GAN Tree from Scratch
@@ -61,7 +61,7 @@ To train your own GAN Tree from scratch, run
 python GANTree.py -hp path/to/hyperparams -en exp_name 
 ```
 
-+ The hyper-parameters for the experiment should be set in the `hyperparams.py` file (check `src/hyperparams` for examples).
++ The hyperparameters for the experiment should be set in the `hyperparams.py` file (check `src/hyperparams` for examples).
 + The training script will create a folder `experiments/exp_name` as specified in the `hyperparams.py` file or argument passed in the command line to the `-en` flag.
 + This folder will contain all data related to the experiment such as generated images, logs, plots, and weights. It will also contain a dump of the hyperparameters.
 
@@ -81,7 +81,7 @@ The following argument flags are available for training:
 + `-w`, `--weights`: the weight type to load if resume flag is provided.  The default value is `iter`.  The choices are `['iter', 'best_gen', 'best_pred']`.
 
 ## 4. Repository Overview
-This repository contains the following files and folders:
+This repository contains the following folders:
 
 1. **data**: Contains the various datasets.
 
@@ -99,7 +99,7 @@ This repository contains the following files and folders:
     
     iv. **models**: Contains code for constructing AAE models, GNode and GAN-Tree.
     
-    v. **modules** and **utils**: Code for various functions used frequently.
+    v. **modules** and **utils**: Contains code for various functions used frequently.
     
     vi. **trainers**: Contains code for the trainers of a particular GNode.
 
