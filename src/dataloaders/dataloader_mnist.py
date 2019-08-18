@@ -1,8 +1,6 @@
 import numpy as np
 
-from dataloaders.base import BaseDataLoader
 from utils import np_utils
-from dataset_loader import Dataset
 from exp_context import ExperimentContext
 
 H = ExperimentContext.get_hyperparams()
@@ -23,7 +21,7 @@ class MNISTDataLoader(object):
 
     def next_batch(self, training=True):
         """
-        Return the next batch for the training loop
+        Return the next batch for the training loop or testing
         """
         if training:
             # print("Dataset shuffled successfully.")

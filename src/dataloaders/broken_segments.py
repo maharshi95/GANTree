@@ -1,6 +1,6 @@
 import numpy as np
 
-from dataloaders.base import BaseDataLoader
+from base.dataloader import BaseDataLoader
 
 
 class BrokenSegmentsDataLoader(BaseDataLoader):

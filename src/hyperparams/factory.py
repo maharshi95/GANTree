@@ -1,9 +1,9 @@
 import importlib
-from . import base
+import base.hyperparams as base_hp
 
 
 class HyperparamsFactory:
-    class_type = base.Hyperparams
+    class_type = base_hp.Hyperparams
 
     @classmethod
     def get_hyperparams(cls, module_name):

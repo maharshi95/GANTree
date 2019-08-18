@@ -2,15 +2,12 @@ import os
 import logging
 import socket
 import traceback
-from contextlib import closing
-
-import paths
 
 logger = logging.getLogger(__name__)
 
 
-def exec_cmd(cmd, log=True, bg=False):
-    if log: logger.info(cmd)
+def exec_cmd(cmd, log_flag=False, bg=False):
+    # if log_flag: logger.info(cmd)
     if bg:
         os.system('{} &'.format(cmd))
     else:
@@ -24,9 +21,9 @@ def wait(msg):
     raw_input()
 
 
-def create_dir(dir_path):
+def create_dir(dir_path, log_flag=True):
     cmd = 'mkdir -p {dir_path}'.format(dir_path=dir_path)
-    exec_cmd(cmd)
+    exec_cmd(cmd, log_flag)
 
 
 def clear_dir(dir_path):
@@ -86,10 +83,12 @@ def get_ip_address():
     return s.getsockname()[0]
 
 
-def start_tensorboard(base_port):
-    available_port = find_free_port(base_port)
-    cmd = "tensorboard --logdir {} --port {}".format(paths.logs_base_dir, available_port)
-    ip = get_ip_address()
-    logger.info("Starting Tensorboard for experiment {} at http://{}:{}".format(paths.exp_name, ip, available_port))
-    # exec_cmd(cmd, bg=True)
-    return ip, available_port
+def launchTensorBoard(path, port, blocking=False):
+    if blocking:
+        import os
+        os.system('tensorboard --logdir {} --port {}'.format(path, port))
+        print('Started tensorboard at http://%s:%s' % (get_ip_address(), str(port)))
+    else:
+        import threading
+        t = threading.Thread(target=launchTensorBoard, args=([path, port, True]))
+        t.start()

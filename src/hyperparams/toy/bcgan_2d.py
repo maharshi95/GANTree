@@ -1,9 +1,12 @@
 import tensorflow as tf
-from hyperparams import base
+from base import hyperparams as base_hp
 
 
-class Hyperparams(base.Hyperparams):
+class Hyperparams(base_hp.Hyperparams):
     dtype = tf.float32
+
+    batch_size = 64
+    logit_batch_size = 32
 
     input_size = 2
 
@@ -17,7 +20,7 @@ class Hyperparams(base.Hyperparams):
 
     z_bounds = 4.0
 
-    show_visual_while_training = True
+    # show_visual_while_training = True
 
     train_generator_adv = True
     train_autoencoder = True
@@ -28,4 +31,4 @@ class Hyperparams(base.Hyperparams):
     dataloader = 'four_gaussian_sym'
 
     model = 'bcgan'
-    exp_name = 'bcgan_2D_two_gaussians_sample_logits'
+    exp_name = 'trial'

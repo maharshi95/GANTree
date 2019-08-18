@@ -1,6 +1,5 @@
-from types import ModuleType
+import inspect
 from hyperparams.factory import HyperparamsFactory
-from models.factory import ModelFactory
 
 
 class ExperimentContext:
@@ -15,21 +14,27 @@ class ExperimentContext:
     exp_name = None
 
     @classmethod
-    def set_context(cls, hyperparams_name, exp_name=None):
-        if isinstance(hyperparams_name, ModuleType):
+    def set_context(cls, hyperparams, exp_name=None):
+        if inspect.isclass(hyperparams):
+            cls.Hyperparams = hyperparams
+            cls.hyperparams_name = 'dynamic'
+            print( 'loaded HP from class')
+
+        elif inspect.ismodule(hyperparams):
+            print( 'loading HP from module')
             try:
-                cls.hyperparams_name = hyperparams_name.__name__
-                cls.Hyperparams = hyperparams_name.Hyperparams
+                cls.hyperparams_name = hyperparams.__name__
+                cls.Hyperparams = hyperparams.Hyperparams
             except Exception as ex:
-                print('module has no attribute Hyperparams: %s' % hyperparams_name.__name__)
+                print('module has no attribute Hyperparams: %s' % hyperparams.__name__)
                 raise ex
         else:
-            if hyperparams_name.endswith('.py'):
-                hyperparams_name = '.'.join(hyperparams_name.split('/'))[:-3]
-            cls.hyperparams_name = hyperparams_name
+            print ('loading HP from file')
+            if hyperparams.endswith('.py'):
+                hyperparams = '.'.join(hyperparams.split('/'))[:-3]
+            cls.hyperparams_name = hyperparams
             cls.Hyperparams = HyperparamsFactory.get_hyperparams(cls.hyperparams_name)
         cls.exp_name = exp_name or cls.Hyperparams.exp_name
-        cls.Model = ModelFactory.get_model(cls.Hyperparams.model)
 
     @classmethod
     def __repr__(cls):
@@ -42,5 +47,3 @@ class ExperimentContext:
     @classmethod
     def get_model_class(cls):
         return cls.Model
-
-    tp = type(ModelFactory)
