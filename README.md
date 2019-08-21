@@ -1,4 +1,4 @@
-# GAN Tree
+# GAN-Tree: An Incrementally Learned Hierarchical Generative Framework for Multi-Modal Data Distributions
 This repository contains code for the paper `GAN-Tree: An Incrementally Learned Hierarchical Generative Framework for Multi-Modal Data Distributions`, published in ICCV 2019.
 
 The full paper can be found [here](https://arxiv.org/abs/1908.03919).  If you find our research work helpful, please consider citing:
