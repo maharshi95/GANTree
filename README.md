@@ -4,11 +4,12 @@ This repository contains code for the paper `GAN-Tree: An Incrementally Learned 
 The full paper can be found [here](https://arxiv.org/abs/1908.03919).  If you find our research work helpful, please consider citing:
 
 ```cite
-@article{kundu2019gan,
-  title={GAN-Tree: An Incrementally Learned Hierarchical Generative Framework for Multi-Modal Data Distributions},
-  author={Kundu, Jogendra Nath and Gor, Maharshi and Agrawal, Dakshit and Babu, R Venkatesh},
-  journal={arXiv preprint arXiv:1908.03919},
-  year={2019}
+@InProceedings{Kundu_2019_ICCV,
+author = {Kundu, Jogendra Nath and Gor, Maharshi and Agrawal, Dakshit and Babu, R. Venkatesh},
+title = {GAN-Tree: An Incrementally Learned Hierarchical Generative Framework for Multi-Modal Data Distributions},
+booktitle = {The IEEE International Conference on Computer Vision (ICCV)},
+month = {October},
+year = {2019}
 }
 ```
 
