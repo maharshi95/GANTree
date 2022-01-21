@@ -6,6 +6,6 @@ imageio==2.4.1
 matplotlib==2.1.2
 tqdm==4.29.0
 scipy==1.2.0
-IPython==5.8.0
+IPython==7.16.3
 tensorflow==1.15.2
 tensorboardX==1.4
