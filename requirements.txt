@@ -7,5 +7,5 @@ matplotlib==2.1.2
 tqdm==4.29.0
 scipy==1.2.0
 IPython==5.8.0
-tensorflow==1.15.2
+tensorflow==2.6.4
 tensorboardX==1.4
